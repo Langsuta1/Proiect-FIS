@@ -1,0 +1,45 @@
+[gd_scene load_steps=5 format=3 uid="uid://player_scene_01"]
+
+[ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Texture2D" path="res://assets/robot_standard_idle_strip4.png" id="2_sprite"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_box"]
+size = Vector2(18, 28)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
+size = Vector2(28, 28)
+
+[node name="Player" type="CharacterBody2D"]
+collision_layer = 2
+collision_mask = 1
+script = ExtResource("1_player")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_sprite")
+hframes = 4
+
+[node name="WeaponSprite" type="Sprite2D" parent="."]
+visible = false
+position = Vector2(10, 0)
+
+[node name="ShieldSprite" type="Sprite2D" parent="."]
+visible = false
+position = Vector2(16, 0)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_box")
+
+[node name="MeleeHitbox" type="Area2D" parent="."]
+position = Vector2(16, 0)
+collision_layer = 4
+collision_mask = 8
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="MeleeHitbox"]
+shape = SubResource("RectangleShape2D_hitbox")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+limit_left = 0
+limit_top = 0
+limit_right = 5200
+limit_bottom = 900
+position_smoothing_enabled = true

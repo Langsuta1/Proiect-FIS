@@ -1,0 +1,42 @@
+[gd_scene load_steps=6 format=3 uid="uid://crawler_v3_safe"]
+
+[ext_resource type="Script" path="res://scripts/enemy_crawler.gd" id="1_crawler"]
+[ext_resource type="Texture2D" path="res://assets/enemy_scrap_crawler_strip4.png" id="2_crawler_tex"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(24, 14)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hurt"]
+size = Vector2(26, 16)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_dmg"]
+size = Vector2(28, 16)
+
+[node name="EnemyCrawler" type="CharacterBody2D"]
+collision_layer = 8
+collision_mask = 1
+script = ExtResource("1_crawler")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_crawler_tex")
+hframes = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, 5)
+shape = SubResource("RectangleShape2D_body")
+
+[node name="Hurtbox" type="Area2D" parent="." groups=["enemies"]]
+collision_layer = 8
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
+position = Vector2(0, 5)
+shape = SubResource("RectangleShape2D_hurt")
+
+[node name="DamageArea" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
+position = Vector2(0, 5)
+shape = SubResource("RectangleShape2D_dmg")

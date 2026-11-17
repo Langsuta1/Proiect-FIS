@@ -1,0 +1,39 @@
+[gd_scene load_steps=6 format=3 uid="uid://drone_v3_safe"]
+
+[ext_resource type="Script" path="res://scripts/enemy_drone.gd" id="1_drone"]
+[ext_resource type="Texture2D" path="res://assets/enemy_junk_drone_strip4.png" id="2_drone_tex"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(20, 16)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hurt"]
+size = Vector2(24, 18)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_dmg"]
+radius = 14.0
+
+[node name="EnemyDrone" type="CharacterBody2D"]
+collision_layer = 8
+collision_mask = 1
+script = ExtResource("1_drone")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_drone_tex")
+hframes = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_body")
+
+[node name="Hurtbox" type="Area2D" parent="." groups=["enemies"]]
+collision_layer = 8
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
+shape = SubResource("RectangleShape2D_hurt")
+
+[node name="DamageArea" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="DamageArea"]
+shape = SubResource("CircleShape2D_dmg")

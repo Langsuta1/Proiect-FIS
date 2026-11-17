@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3 uid="uid://main_root_01"]
+
+[ext_resource type="PackedScene" path="res://scenes/level_heap.tscn" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="2_hud"]
+
+[node name="Main" type="Node"]
+
+[node name="LevelHeap" parent="." instance=ExtResource("1_level")]
+
+[node name="HUD" parent="." instance=ExtResource("2_hud")]
