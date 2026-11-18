@@ -126,7 +126,7 @@ func _execute_slam() -> void:
 			if player_ref.has_method("take_damage"):
 				player_ref.take_damage(50.0) # 50% HP SLAM!
 
-func take_damage(amount: float) -> void:
+func take_damage(amount: float, knockback: float = 0.0) -> void:
 	if current_state == State.DORMANT or current_state == State.INTRO:
 		return
 

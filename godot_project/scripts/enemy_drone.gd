@@ -1,6 +1,6 @@
 extends CharacterBody2D
 class_name EnemyDrone
-# enemy_drone.gd - Patrolling flying drone with dedicated damage Area2D (No per-frame melt!)
+# enemy_drone.gd - Patrolling flying drone with safe default parameters to prevent crash
 
 @export var patrol_distance: float = 120.0
 @export var speed: float = 55.0
@@ -42,7 +42,7 @@ func _on_damage_body_entered(body: Node2D) -> void:
 		var kb_dir = 1.0 if body.global_position.x > global_position.x else -1.0
 		body.take_damage(16.0, kb_dir)
 
-func take_damage(amount: float, knockback: float) -> void:
+func take_damage(amount: float, knockback: float = 0.0) -> void:
 	hp -= amount
 	velocity.x = knockback * 160.0
 	modulate = Color(1, 0.3, 0.3)

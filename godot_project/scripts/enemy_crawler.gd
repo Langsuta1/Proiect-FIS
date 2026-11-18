@@ -1,6 +1,6 @@
 extends CharacterBody2D
 class_name EnemyCrawler
-# enemy_crawler.gd - Ground patrolling scrap crawler with dedicated damage Area2D
+# enemy_crawler.gd - Scrap Crawler with safe default parameters to prevent crash
 
 @export var patrol_distance: float = 140.0
 @export var speed: float = 45.0
@@ -44,7 +44,7 @@ func _on_damage_body_entered(body: Node2D) -> void:
 		var kb_dir = 1.0 if body.global_position.x > global_position.x else -1.0
 		body.take_damage(20.0, kb_dir)
 
-func take_damage(amount: float, knockback: float) -> void:
+func take_damage(amount: float, knockback: float = 0.0) -> void:
 	hp -= amount
 	velocity.x = knockback * 140.0
 	modulate = Color(1, 0.3, 0.3)

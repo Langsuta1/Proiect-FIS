@@ -1,5 +1,5 @@
 extends CanvasLayer
-# hud.gd - Metroidvania HUD with Armor, Core Energy, Shield Bar, Primary/Secondary [Q], and 3x3 Inventory [I]
+# hud.gd - V9 High-Fidelity HUD with Drag & Drop Inventory matching user reference
 
 @onready var hp_fill: ColorRect = $HUDPanel/VBox/HPContainer/HPTrack/HPFill
 @onready var hp_label: Label = $HUDPanel/VBox/HPContainer/HPLabel
@@ -16,13 +16,25 @@ extends CanvasLayer
 @onready var boss_bar: ProgressBar = $BossPanel/BossBar
 @onready var boss_phase_lbl: Label = $BossPanel/PhaseLabel
 
-@onready var inv_modal: Panel = $InventoryModal
-@onready var inv_grid: GridContainer = $InventoryModal/VBox/GridContainer
+@onready var inv_modal: Control = $InventoryModal
+@onready var slot_main_ui: InventorySlotUI = $InventoryModal/Panel/HBox/LeftCol/SlotMain
+@onready var slot_sec_ui: InventorySlotUI = $InventoryModal/Panel/HBox/LeftCol/SlotSec
+@onready var backpack_grid: GridContainer = $InventoryModal/Panel/HBox/RightCol/BackpackGrid
+
+var selected_slot_loc: String = ""
+var selected_slot_idx: int = -1
 
 func _ready() -> void:
+	add_to_group("hud")
 	layer = 100
 	if boss_panel: boss_panel.visible = false
 	if inv_modal: inv_modal.visible = false
+
+	slot_main_ui.slot_type = "main"
+	slot_main_ui.slot_index = 0
+
+	slot_sec_ui.slot_type = "sec"
+	slot_sec_ui.slot_index = 0
 
 	GameManager.player_health_changed.connect(_on_hp_changed)
 	GameManager.player_energy_changed.connect(_on_ep_changed)
@@ -32,6 +44,7 @@ func _ready() -> void:
 	GameManager.boss_health_changed.connect(_on_boss_health)
 	GameManager.boss_defeated.connect(_on_boss_defeated)
 
+	_setup_backpack_slots()
 	_update_hud_display()
 
 func _input(event: InputEvent) -> void:
@@ -41,8 +54,54 @@ func _input(event: InputEvent) -> void:
 func _toggle_inventory() -> void:
 	if inv_modal:
 		inv_modal.visible = not inv_modal.visible
+		selected_slot_loc = ""
+		selected_slot_idx = -1
 		if inv_modal.visible:
 			_update_inventory_ui()
+
+func _setup_backpack_slots() -> void:
+	if not backpack_grid: return
+	for child in backpack_grid.get_children():
+		child.queue_free()
+
+	var slot_scene = preload("res://scenes/inventory_slot_ui.tscn")
+	for i in range(9):
+		var slot_inst = slot_scene.instantiate()
+		slot_inst.slot_type = "backpack"
+		slot_inst.slot_index = i
+		backpack_grid.add_child(slot_inst)
+
+func _update_inventory_ui() -> void:
+	if not inv_modal or not inv_modal.visible:
+		return
+
+	# Update Main Hand Slot
+	slot_main_ui.update_slot(GameManager.main_hand, selected_slot_loc == "main")
+
+	# Update Secondary Hand Slot
+	slot_sec_ui.update_slot(GameManager.secondary_hand, selected_slot_loc == "sec")
+
+	# Update Backpack 3x3 Grid
+	var slots = backpack_grid.get_children()
+	for i in range(slots.size()):
+		var slot_ctrl = slots[i] as InventorySlotUI
+		if slot_ctrl and i < GameManager.backpack.size():
+			var is_sel = (selected_slot_loc == "backpack" and selected_slot_idx == i)
+			slot_ctrl.update_slot(GameManager.backpack[i], is_sel)
+
+func _on_slot_ui_clicked(loc: String, idx: int) -> void:
+	if selected_slot_loc == "":
+		selected_slot_loc = loc
+		selected_slot_idx = idx
+	else:
+		if selected_slot_loc == loc and selected_slot_idx == idx:
+			selected_slot_loc = ""
+			selected_slot_idx = -1
+		else:
+			GameManager.swap_slots(selected_slot_loc, selected_slot_idx, loc, idx)
+			selected_slot_loc = ""
+			selected_slot_idx = -1
+	_update_inventory_ui()
 
 func _update_hud_display() -> void:
 	var hp_pct = clamp(GameManager.player_hp / GameManager.player_max_hp, 0.0, 1.0)
@@ -58,32 +117,16 @@ func _update_hud_display() -> void:
 	if shield_fill: shield_fill.size.x = 180.0 * shield_pct
 	if shield_label: shield_label.text = "SHIELD: " + str(int(GameManager.player_shield)) + " / " + str(int(GameManager.player_max_shield))
 
-	if weapon_primary_lbl: weapon_primary_lbl.text = "PRIMARY: " + GameManager.primary_weapon.to_upper()
-	if weapon_secondary_lbl: weapon_secondary_lbl.text = "SECONDARY: " + GameManager.secondary_weapon.to_upper()
+	var m_name = GameManager.main_hand.get("name", "EMPTY")
+	var s_name = GameManager.secondary_hand.get("name", "EMPTY")
+	if weapon_primary_lbl: weapon_primary_lbl.text = "MAIN HAND: " + m_name.to_upper()
+	if weapon_secondary_lbl: weapon_secondary_lbl.text = "SECONDARY: " + s_name.to_upper()
 	if grenade_lbl: grenade_lbl.text = "GRENADE: " + GameManager.active_grenade.to_upper()
 
-func _on_hp_changed(_hp: float, _mx: float) -> void:
-	_update_hud_display()
-
-func _on_ep_changed(_ep: float, _mx: float) -> void:
-	_update_hud_display()
-
-func _on_shield_changed(_sh: float, _mx: float) -> void:
-	_update_hud_display()
-
-func _on_weapon_swapped(_p: String, _s: String) -> void:
-	_update_hud_display()
-
-func _update_inventory_ui() -> void:
-	if not inv_grid: return
-	for child in inv_grid.get_children():
-		child.queue_free()
-
-	for slot in GameManager.backpack:
-		var btn = Button.new()
-		btn.custom_minimum_size = Vector2(80, 60)
-		btn.text = slot["name"] + (" x" + str(slot["count"]) if slot.has("count") else "")
-		inv_grid.add_child(btn)
+func _on_hp_changed(_hp: float, _mx: float) -> void: _update_hud_display()
+func _on_ep_changed(_ep: float, _mx: float) -> void: _update_hud_display()
+func _on_shield_changed(_sh: float, _mx: float) -> void: _update_hud_display()
+func _on_weapon_swapped(_p: String, _s: String) -> void: _update_hud_display()
 
 func _on_boss_health(curr: float, mx: float, phase: int) -> void:
 	if boss_panel:
@@ -94,5 +137,4 @@ func _on_boss_health(curr: float, mx: float, phase: int) -> void:
 			boss_phase_lbl.text = "PHASE 2 - ENRAGED CRUSHER" if phase == 2 else "PHASE 1 - COMPACTOR OVERLOAD"
 
 func _on_boss_defeated() -> void:
-	if boss_panel:
-		boss_panel.visible = false
+	if boss_panel: boss_panel.visible = false

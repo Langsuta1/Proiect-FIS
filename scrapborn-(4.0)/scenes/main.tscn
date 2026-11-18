@@ -1,11 +1,11 @@
-[gd_scene format=3 uid="uid://bl3n8om0bpbax"]
+[gd_scene format=3 uid="uid://b4n5tsgvq5tm8"]
 
 [ext_resource type="PackedScene" path="res://scenes/level_heap.tscn" id="1_level"]
 [ext_resource type="PackedScene" path="res://scenes/hud.tscn" id="2_hud"]
 
-[node name="Main" type="Node" unique_id=561260195]
+[node name="Main" type="Node" unique_id=1609071738]
 
-[node name="LevelHeap" parent="." unique_id=1883564127 instance=ExtResource("1_level")]
-position = Vector2(-4, 25)
+[node name="LevelHeap" parent="." unique_id=330324864 instance=ExtResource("1_level")]
+position = Vector2(0, 0)
 
-[node name="HUD" parent="." unique_id=96098245 instance=ExtResource("2_hud")]
+[node name="HUD" parent="." unique_id=513197506 instance=ExtResource("2_hud")]

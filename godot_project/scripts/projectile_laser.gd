@@ -1,5 +1,5 @@
 extends Area2D
-# projectile_laser.gd - Cyan plasma pulse beam
+# projectile_laser.gd - Cyan plasma pulse beam with safe universal damage calls
 
 @export var speed: float = 480.0
 @export var damage: float = 24.0
@@ -13,11 +13,12 @@ func _physics_process(dt: float) -> void:
 	position += direction * speed * dt
 
 func _on_body_entered(body: Node2D) -> void:
-	if not body is Player:
+	if not body is Player and not body.is_in_group("player"):
 		queue_free()
 
 func _on_area_entered(area: Area2D) -> void:
-	if area.is_in_group("enemies"):
-		if area.get_parent().has_method("take_damage"):
-			area.get_parent().take_damage(damage, direction.x)
+	var target = area.get_parent()
+	if area.is_in_group("enemies") or area.is_in_group("boss") or (target and (target.is_in_group("enemies") or target.is_in_group("boss"))):
+		if target and target.has_method("take_damage"):
+			target.take_damage(damage, direction.x)
 		queue_free()

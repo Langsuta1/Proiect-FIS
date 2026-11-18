@@ -1,13 +1,18 @@
-[gd_scene load_steps=12 format=3 uid="uid://level_heap_v7_complete"]
+[gd_scene load_steps=20 format=3 uid="uid://level_heap_v9_conduit_fixed"]
 
 [ext_resource type="Texture2D" path="res://assets/level_heap_backdrop_5200x900.png" id="1_backdrop"]
 [ext_resource type="Texture2D" path="res://assets/crushed_car_obstacle.png" id="2_car_tex"]
-[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="3_player"]
-[ext_resource type="PackedScene" path="res://scenes/enemy_drone.tscn" id="4_drone"]
-[ext_resource type="PackedScene" path="res://scenes/enemy_crawler.tscn" id="5_crawler"]
-[ext_resource type="PackedScene" path="res://scenes/boss_crusher.tscn" id="6_boss"]
-[ext_resource type="PackedScene" path="res://scenes/tutorial_prompt.tscn" id="7_tut"]
-[ext_resource type="Texture2D" path="res://assets/grapple_ring_32x32.png" id="8_ring"]
+[ext_resource type="Texture2D" path="res://assets/scrap_conduit_tunnel_tall.png" id="3_conduit_tall"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
+[ext_resource type="PackedScene" path="res://scenes/enemy_drone.tscn" id="5_drone"]
+[ext_resource type="PackedScene" path="res://scenes/enemy_crawler.tscn" id="6_crawler"]
+[ext_resource type="PackedScene" path="res://scenes/boss_crusher.tscn" id="7_boss"]
+[ext_resource type="PackedScene" path="res://scenes/tutorial_prompt.tscn" id="8_tut"]
+[ext_resource type="Texture2D" path="res://assets/grapple_ring_32x32.png" id="9_ring"]
+[ext_resource type="Script" path="res://scripts/grapple_ring.gd" id="10_g_ring"]
+[ext_resource type="Script" path="res://scripts/hazard_acid_pit.gd" id="11_acid"]
+[ext_resource type="Texture2D" path="res://assets/overhead_girder_beam.png" id="12_girder"]
+[ext_resource type="PackedScene" path="res://scenes/scrap_barricade.tscn" id="13_barricade"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor1"]
 size = Vector2(2800, 40)
@@ -15,11 +20,17 @@ size = Vector2(2800, 40)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor2"]
 size = Vector2(1600, 40)
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_conduit"]
-size = Vector2(240, 20)
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_conduit_roof"]
+size = Vector2(280, 360)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_car"]
 size = Vector2(56, 24)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_acid"]
+size = Vector2(740, 140)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_girder"]
+size = Vector2(36, 550)
 
 [node name="LevelHeap" type="Node2D"]
 
@@ -39,10 +50,6 @@ shape = SubResource("RectangleShape2D_floor1")
 position = Vector2(4400, 800)
 shape = SubResource("RectangleShape2D_floor2")
 
-[node name="LowConduitRoof" type="CollisionShape2D" parent="StaticGeometry"]
-position = Vector2(850, 755)
-shape = SubResource("RectangleShape2D_conduit")
-
 [node name="CrushedCarObstacle" type="StaticBody2D" parent="."]
 position = Vector2(320, 768)
 collision_layer = 1
@@ -54,86 +61,132 @@ texture = ExtResource("2_car_tex")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="CrushedCarObstacle"]
 shape = SubResource("RectangleShape2D_car")
 
+[node name="ScrapConduitTunnel" type="StaticBody2D" parent="."]
+position = Vector2(860, 760)
+collision_layer = 1
+collision_mask = 0
+
+[node name="Sprite2D" type="Sprite2D" parent="ScrapConduitTunnel"]
+position = Vector2(0, -180)
+texture = ExtResource("3_conduit_tall")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ScrapConduitTunnel"]
+position = Vector2(0, -180)
+shape = SubResource("RectangleShape2D_conduit_roof")
+
+[node name="OverheadGirderBeam" type="StaticBody2D" parent="."]
+position = Vector2(1380, 440)
+collision_layer = 1
+collision_mask = 0
+
+[node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam"]
+texture = ExtResource("12_girder")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam"]
+shape = SubResource("RectangleShape2D_girder")
+
+[node name="ScrapBarricade" parent="." instance=ExtResource("13_barricade")]
+position = Vector2(1380, 748)
+
 [node name="GrappleRing1" type="Node2D" parent="." groups=["grapple_rings"]]
 position = Vector2(3000, 560)
+script = ExtResource("10_g_ring")
 
 [node name="Sprite2D" type="Sprite2D" parent="GrappleRing1"]
-texture = ExtResource("8_ring")
+texture = ExtResource("9_ring")
 
 [node name="GrappleRing2" type="Node2D" parent="." groups=["grapple_rings"]]
 position = Vector2(3200, 540)
+script = ExtResource("10_g_ring")
 
 [node name="Sprite2D" type="Sprite2D" parent="GrappleRing2"]
-texture = ExtResource("8_ring")
+texture = ExtResource("9_ring")
 
 [node name="GrappleRing3" type="Node2D" parent="." groups=["grapple_rings"]]
 position = Vector2(3400, 560)
+script = ExtResource("10_g_ring")
 
 [node name="Sprite2D" type="Sprite2D" parent="GrappleRing3"]
-texture = ExtResource("8_ring")
+texture = ExtResource("9_ring")
 
-[node name="Player" parent="." instance=ExtResource("3_player")]
+[node name="HazardAcidPit" type="Area2D" parent="."]
+position = Vector2(3200, 890)
+collision_layer = 8
+collision_mask = 2
+script = ExtResource("11_acid")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HazardAcidPit"]
+shape = SubResource("RectangleShape2D_acid")
+
+[node name="AcidSurfaceVisual" type="ColorRect" parent="HazardAcidPit"]
+offset_left = -370.0
+offset_top = -60.0
+offset_right = 370.0
+offset_bottom = 60.0
+color = Color(0.12, 0.95, 0.35, 0.35)
+
+[node name="Player" parent="." instance=ExtResource("4_player")]
 position = Vector2(80, 750)
 
-[node name="TutorialMove" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialMove" parent="." instance=ExtResource("8_tut")]
 position = Vector2(100, 715)
 tutorial_title = "A / D"
 tutorial_desc = "MOVE CHASSIS\nHold [SHIFT] to Sprint"
 detection_radius = 140.0
 
-[node name="TutorialJumpCar" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialJumpCar" parent="." instance=ExtResource("8_tut")]
 position = Vector2(310, 715)
 tutorial_title = "[SPACE] TO JUMP"
 tutorial_desc = "Leap over crushed car obstacle"
 detection_radius = 160.0
 
-[node name="TutorialCrouch" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialCrouch" parent="." instance=ExtResource("8_tut")]
 position = Vector2(720, 715)
 tutorial_title = "[S] / [DOWN] CROUCH"
-tutorial_desc = "Crawl through low scrap conduit\n(Clearance only 22px!)"
+tutorial_desc = "Crawl through low scrap conduit\n(Clearance 20px - crouch to pass!)"
 detection_radius = 160.0
 
-[node name="TutorialMelee" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialMelee" parent="." instance=ExtResource("8_tut")]
 position = Vector2(1300, 715)
 tutorial_title = "[X] / [LEFT CLICK]"
 tutorial_desc = "Swing Cyber Frying Pan\nto shatter scrap barricade"
 detection_radius = 160.0
 
-[node name="TutorialSafeCombat" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialSafeCombat" parent="." instance=ExtResource("8_tut")]
 position = Vector2(1700, 715)
 tutorial_title = "SAFE COMBAT ARENA"
 tutorial_desc = "Defeat isolated Scrap Crawler\nand Junk Drone to advance"
 detection_radius = 180.0
 
-[node name="TutorialShield" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialShield" parent="." instance=ExtResource("8_tut")]
 position = Vector2(2450, 715)
 tutorial_title = "HOLD [F] / [RIGHT CLICK]"
 tutorial_desc = "Deploy Energy Shield\n(Regens 15%/s after 3s non-use)"
 detection_radius = 180.0
 
-[node name="TutorialGrapple" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialGrapple" parent="." instance=ExtResource("8_tut")]
 position = Vector2(2750, 715)
 tutorial_title = "[E] GRAPPLING HOOK"
 tutorial_desc = "Latch onto overhead rings\nSwing across colossal death chasm!"
 detection_radius = 200.0
 
-[node name="TutorialGrenade" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialGrenade" parent="." instance=ExtResource("8_tut")]
 position = Vector2(3750, 715)
 tutorial_title = "[G] FRAG GRENADE"
 tutorial_desc = "Blast open reinforced steel bulkhead"
 detection_radius = 180.0
 
-[node name="TutorialPreBoss" parent="." instance=ExtResource("7_tut")]
+[node name="TutorialPreBoss" parent="." instance=ExtResource("8_tut")]
 position = Vector2(3980, 715)
 tutorial_title = "[I] INVENTORY & [Q] SWAP"
-tutorial_desc = "Configure 3x3 Arsenal Matrix\nPrepare for The Crusher Titan!"
+tutorial_desc = "Drag & Drop Arsenal Matrix\nPrepare for The Crusher Titan!"
 detection_radius = 180.0
 
-[node name="EnemyCrawler1" parent="." instance=ExtResource("5_crawler")]
+[node name="EnemyCrawler1" parent="." instance=ExtResource("6_crawler")]
 position = Vector2(1900, 768)
 
-[node name="EnemyDrone1" parent="." instance=ExtResource("4_drone")]
+[node name="EnemyDrone1" parent="." instance=ExtResource("5_drone")]
 position = Vector2(2100, 580)
 
-[node name="BossCrusher" parent="." instance=ExtResource("6_boss")]
+[node name="BossCrusher" parent="." instance=ExtResource("7_boss")]
 position = Vector2(4600, 740)
