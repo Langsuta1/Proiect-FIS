@@ -85,6 +85,17 @@ texture = ExtResource("12_girder")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam"]
 shape = SubResource("RectangleShape2D_girder")
 
+[node name="OverheadGirderBeam2" type="StaticBody2D" parent="."]
+position = Vector2(1460, 440)
+collision_layer = 1
+collision_mask = 0
+
+[node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam2"]
+texture = ExtResource("12_girder")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam2"]
+shape = SubResource("RectangleShape2D_girder")
+
 [node name="ScrapBarricade" parent="." instance=ExtResource("13_barricade")]
 position = Vector2(1380, 748)
 
@@ -150,6 +161,12 @@ detection_radius = 160.0
 position = Vector2(1300, 715)
 tutorial_title = "[X] / [LEFT CLICK]"
 tutorial_desc = "Swing Cyber Frying Pan\nto shatter scrap barricade"
+detection_radius = 160.0
+
+[node name="TutorialWallJump" parent="." instance=ExtResource("8_tut")]
+position = Vector2(1420, 715)
+tutorial_title = "WALL SLIDE & JUMP"
+tutorial_desc = "Hold [A] / [D] into wall to slide\nPress [SPACE] to Wall Jump!"
 detection_radius = 160.0
 
 [node name="TutorialSafeCombat" parent="." instance=ExtResource("8_tut")]

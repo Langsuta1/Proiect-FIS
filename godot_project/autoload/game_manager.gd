@@ -70,6 +70,7 @@ func _setup_inputs() -> void:
 	_add_action("attack_ranged", [KEY_Z])
 	_add_action("switch_weapon", [KEY_Q])
 	_add_action("inventory", [KEY_I])
+	_add_action("ui_cancel", [KEY_ESCAPE])
 	_add_action("shield", [KEY_F])
 	_add_mouse_action("shield", MOUSE_BUTTON_RIGHT)
 	_add_action("grenade", [KEY_G])

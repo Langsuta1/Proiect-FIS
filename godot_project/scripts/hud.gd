@@ -50,6 +50,10 @@ func _ready() -> void:
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("inventory"):
 		_toggle_inventory()
+	elif event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.is_pressed() and not event.is_echo() and event.keycode == KEY_ESCAPE):
+		if inv_modal and inv_modal.visible:
+			_close_inventory()
+			get_viewport().set_input_as_handled()
 
 func _toggle_inventory() -> void:
 	if inv_modal:
@@ -58,6 +62,12 @@ func _toggle_inventory() -> void:
 		selected_slot_idx = -1
 		if inv_modal.visible:
 			_update_inventory_ui()
+
+func _close_inventory() -> void:
+	if inv_modal and inv_modal.visible:
+		inv_modal.visible = false
+		selected_slot_loc = ""
+		selected_slot_idx = -1
 
 func _setup_backpack_slots() -> void:
 	if not backpack_grid: return

@@ -10,6 +10,9 @@ class_name Player
 @export var dash_speed: float = 420.0
 @export var dash_duration: float = 0.22
 @export var gravity: float = 980.0
+@export var wall_slide_speed: float = 75.0
+@export var wall_jump_h_force: float = 270.0
+@export var wall_jump_v_velocity: float = -370.0
 
 # Strict I-Frames
 var i_frame_timer: float = 0.0
@@ -23,6 +26,10 @@ var dash_timer: float = 0.0
 var dash_cooldown: float = 0.0
 var can_double_jump: bool = true
 var has_double_jumped: bool = false
+var is_wall_sliding: bool = false
+var wall_direction: int = 0
+var wall_jump_lock_timer: float = 0.0
+var wall_coyote_timer: float = 0.0
 
 # Energy Shield
 var is_shield_raised: bool = false
@@ -33,6 +40,8 @@ var grapple_anchor: Vector2 = Vector2.ZERO
 var grapple_length: float = 0.0
 var grapple_angle: float = 0.0
 var grapple_angular_vel: float = 0.0
+var grapple_has_passed_bottom: bool = false
+var grapple_swing_timer: float = 0.0
 const GRAPPLE_RANGE: float = 290.0
 
 # Grenade Slingshot Aiming
@@ -73,6 +82,7 @@ var tex_damaged_attack_bat = preload("res://assets/robot_damaged_attack_bat_stri
 var tex_standard_shoot = preload("res://assets/robot_standard_shoot_strip4.png")
 var tex_damaged_shoot = preload("res://assets/robot_damaged_shoot_strip4.png")
 var tex_shield = preload("res://assets/shield_energy_barrier_64x64.png")
+var tex_jump = preload("res://assets/robot_jump_strip3.png")
 
 var anim_timer: float = 0.0
 
@@ -102,12 +112,17 @@ func _physics_process(dt: float) -> void:
 		die_in_hazard("void")
 		return
 
-	# 1. Update I-Frames
+	# 1. Update I-Frames & Movement Timers
 	if i_frame_timer > 0.0:
 		i_frame_timer -= dt
 		sprite.modulate.a = 0.35 if fmod(Time.get_ticks_msec() / 70.0, 2.0) > 1.0 else 1.0
 	else:
 		sprite.modulate.a = 1.0
+
+	if wall_jump_lock_timer > 0.0:
+		wall_jump_lock_timer -= dt
+	if wall_coyote_timer > 0.0:
+		wall_coyote_timer -= dt
 
 	# 2. Quick-Swap Weapons [Q]
 	if Input.is_action_just_pressed("switch_weapon"):
@@ -200,16 +215,49 @@ func _physics_process(dt: float) -> void:
 				rect.size = Vector2(18, 28)
 				collision_shape.position = Vector2(0, 0)
 
-	# 7. Gravity
+	# 7. Gravity & Wall Slide Friction
 	if not is_on_floor():
 		velocity.y += gravity * dt
 	else:
 		can_double_jump = true
 		has_double_jumped = false
 
-	# 8. Jump & Double Jump
+	# Detect Wall Slide
+	var on_wall = is_on_wall() and not is_on_floor()
+	var wall_normal = get_wall_normal()
+	var wall_dir = 0
+	if wall_normal.x > 0.5:
+		wall_dir = -1
+	elif wall_normal.x < -0.5:
+		wall_dir = 1
+
+	var input_dir: float = Input.get_axis("move_left", "move_right")
+	var pushing_wall = (input_dir != 0.0 and sign(input_dir) == wall_dir)
+
+	if on_wall and pushing_wall and velocity.y > 0.0 and not is_crouching and not is_dashing and not is_grappling:
+		is_wall_sliding = true
+		wall_direction = wall_dir
+		wall_coyote_timer = 0.12
+		velocity.y = min(velocity.y, wall_slide_speed)
+		can_double_jump = true
+		has_double_jumped = false
+	else:
+		is_wall_sliding = false
+
+	# 8. Jump, Wall Jump & Double Jump
 	if Input.is_action_just_pressed("jump"):
-		if is_on_floor():
+		if (is_wall_sliding or wall_coyote_timer > 0.0) and not is_on_floor():
+			# Wall Jump (Free, launches diagonally away from wall and up)
+			velocity.x = -wall_direction * wall_jump_h_force
+			velocity.y = wall_jump_v_velocity
+			facing_direction = -wall_direction
+			sprite.scale.x = facing_direction
+			wall_jump_lock_timer = 0.16
+			is_wall_sliding = false
+			wall_coyote_timer = 0.0
+			can_double_jump = true
+			has_double_jumped = false
+		elif is_on_floor():
 			# Can only jump if not stuck under a low ceiling!
 			if can_stand:
 				velocity.y = jump_velocity
@@ -218,21 +266,23 @@ func _physics_process(dt: float) -> void:
 			has_double_jumped = true
 
 	# 9. Horizontal Movement
-	var input_dir: float = Input.get_axis("move_left", "move_right")
-	is_sprinting = Input.is_action_pressed("sprint") and input_dir != 0.0 and not is_crouching
-
-	var target_speed = walk_speed
-	if is_crouching:
-		target_speed = crouch_speed
-	elif is_sprinting:
-		target_speed = sprint_speed
-
-	if input_dir != 0.0:
-		velocity.x = input_dir * target_speed
-		facing_direction = 1 if input_dir > 0 else -1
-		sprite.scale.x = facing_direction
+	if wall_jump_lock_timer > 0.0:
+		velocity.x = move_toward(velocity.x, input_dir * walk_speed, 600.0 * dt)
 	else:
-		velocity.x = move_toward(velocity.x, 0.0, 800.0 * dt)
+		is_sprinting = Input.is_action_pressed("sprint") and input_dir != 0.0 and not is_crouching
+
+		var target_speed = walk_speed
+		if is_crouching:
+			target_speed = crouch_speed
+		elif is_sprinting:
+			target_speed = sprint_speed
+
+		if input_dir != 0.0:
+			velocity.x = input_dir * target_speed
+			facing_direction = 1 if input_dir > 0 else -1
+			sprite.scale.x = facing_direction
+		else:
+			velocity.x = move_toward(velocity.x, 0.0, 800.0 * dt)
 
 	# 10. Combat Attacks (Distinct Melee and Ranged handling)
 	_handle_attacks(dt)
@@ -497,6 +547,8 @@ func _try_grapple() -> void:
 
 	if target_ring:
 		is_grappling = true
+		grapple_has_passed_bottom = false
+		grapple_swing_timer = 0.0
 		grapple_anchor = target_ring.global_position
 		grapple_length = clamp(global_position.distance_to(grapple_anchor), 110.0, GRAPPLE_RANGE)
 		grapple_angle = (global_position - grapple_anchor).angle()
@@ -516,6 +568,8 @@ func _try_grapple() -> void:
 		queue_redraw()
 
 func _process_grapple_physics(dt: float) -> void:
+	grapple_swing_timer += dt
+
 	# 1. Gravity angular acceleration (correct sign for Godot +Y downwards):
 	var angular_accel = (gravity / grapple_length) * cos(grapple_angle)
 
@@ -566,15 +620,37 @@ func _process_grapple_physics(dt: float) -> void:
 	# 5. Redraw the visible grappling hook cable
 	queue_redraw()
 
-	# 6. Catapult Jump Off with [SPACE]
+	# 6. Automatic Single-Swing Release Check (Releases at forward apex after crossing bottom)
+	if facing_direction > 0: # Swinging to the right
+		if grapple_angle <= 1.57:
+			grapple_has_passed_bottom = true
+		if grapple_has_passed_bottom and (grapple_angular_vel >= -0.4 or grapple_angle <= deg_to_rad(48.0) or grapple_swing_timer >= 0.85):
+			_catapult_release_grapple()
+			return
+	else: # Swinging to the left
+		if grapple_angle >= 1.57:
+			grapple_has_passed_bottom = true
+		if grapple_has_passed_bottom and (grapple_angular_vel <= 0.4 or grapple_angle >= deg_to_rad(132.0) or grapple_swing_timer >= 0.85):
+			_catapult_release_grapple()
+			return
+
+	# Fallback safety timeout (auto-release after 1.1s so player never hangs stuck)
+	if grapple_swing_timer >= 1.1:
+		_catapult_release_grapple()
+		return
+
+	# 7. Manual Early Jump Off with [SPACE]
 	if Input.is_action_just_pressed("jump"):
-		var launch_vel = velocity
-		_release_grapple()
-		velocity = launch_vel
-		velocity.y = min(velocity.y, jump_velocity * 0.95)
-		velocity.x += facing_direction * 160.0
-		can_double_jump = true
-		has_double_jumped = false
+		_catapult_release_grapple()
+
+func _catapult_release_grapple() -> void:
+	var launch_vel = velocity
+	_release_grapple()
+	velocity = launch_vel
+	velocity.y = min(velocity.y, jump_velocity * 0.95)
+	velocity.x += facing_direction * 180.0
+	can_double_jump = true
+	has_double_jumped = false
 
 func _release_grapple() -> void:
 	is_grappling = false
@@ -590,12 +666,28 @@ func _update_animations(dt: float, input_dir: float) -> void:
 	if is_crouching:
 		sprite.texture = tex_damaged_crouch if is_dmg else tex_standard_crouch
 		sprite.hframes = 2
-		sprite.frame = int(anim_timer * 4.0) % 2
+		if input_dir != 0.0:
+			# Crouch Walk: animated crawl cycle synchronized with movement speed + subtle crawl bob
+			var crawl_frame = int(anim_timer * 7.5) % 2
+			sprite.frame = crawl_frame
+			sprite.offset.x = (1 if crawl_frame == 1 else 0) * facing_direction
+			sprite.offset.y = 1 if crawl_frame == 1 else 0
+		else:
+			# Crouch Idle: steady low-duck posture (frame 0, no twitching)
+			sprite.frame = 0
+			sprite.offset = Vector2.ZERO
+	elif is_wall_sliding:
+		sprite.texture = tex_jump
+		sprite.hframes = 3
+		sprite.frame = 1
+		sprite.scale.x = wall_direction
 		sprite.offset = Vector2(0, 0)
 	elif not is_on_floor():
-		sprite.texture = tex_standard_walk
-		sprite.hframes = 8
-		sprite.frame = 3
+		sprite.texture = tex_jump
+		sprite.hframes = 3
+		sprite.frame = 0 if velocity.y < 0.0 else 2
+		sprite.scale.x = facing_direction
+		sprite.offset = Vector2(0, 0)
 	elif input_dir != 0.0:
 		sprite.texture = tex_damaged_walk if is_dmg else tex_standard_walk
 		sprite.hframes = 8
