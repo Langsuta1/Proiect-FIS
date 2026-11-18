@@ -6,6 +6,6 @@
 [node name="Main" type="Node" unique_id=1609071738]
 
 [node name="LevelHeap" parent="." unique_id=330324864 instance=ExtResource("1_level")]
-position = Vector2(0, 0)
+position = Vector2(-3960, -359)
 
 [node name="HUD" parent="." unique_id=513197506 instance=ExtResource("2_hud")]
