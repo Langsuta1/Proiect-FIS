@@ -43,3 +43,17 @@ limit_top = 0
 limit_right = 5200
 limit_bottom = 900
 position_smoothing_enabled = true
+
+[node name="DashParticles" type="CPUParticles2D" parent="."]
+emitting = false
+amount = 18
+lifetime = 0.25
+local_coords = false
+direction = Vector2(-1, 0)
+spread = 20.0
+gravity = Vector2(0, 30)
+initial_velocity_min = 20.0
+initial_velocity_max = 60.0
+scale_amount_min = 1.5
+scale_amount_max = 2.5
+color = Color(0.28, 0.85, 1, 0.8)

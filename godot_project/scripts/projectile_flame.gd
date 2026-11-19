@@ -12,6 +12,7 @@ var timer: float = 0.0
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	area_entered.connect(_on_area_entered)
+	rotation = direction.angle()
 
 func _physics_process(dt: float) -> void:
 	timer += dt

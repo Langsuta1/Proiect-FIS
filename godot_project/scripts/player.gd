@@ -24,6 +24,8 @@ var is_crouching: bool = false
 var is_dashing: bool = false
 var dash_timer: float = 0.0
 var dash_cooldown: float = 0.0
+var dash_ghost_timer: float = 0.0
+const DASH_GHOST_INTERVAL: float = 0.038
 var can_double_jump: bool = true
 var has_double_jumped: bool = false
 var is_wall_sliding: bool = false
@@ -67,6 +69,10 @@ var flame_tick_timer: float = 0.0
 @onready var shield_sprite: Sprite2D = $ShieldSprite
 @onready var melee_hitbox: Area2D = $MeleeHitbox
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var dash_particles: CPUParticles2D = get_node_or_null("DashParticles")
+
+const DashGhostClass = preload("res://scripts/dash_ghost.gd")
+const AirJumpEffectScene = preload("res://scenes/air_jump_effect.tscn")
 
 # Humanoid Textures
 var tex_standard_walk = preload("res://assets/robot_standard_walk_strip8.png")
@@ -83,8 +89,10 @@ var tex_standard_shoot = preload("res://assets/robot_standard_shoot_strip4.png")
 var tex_damaged_shoot = preload("res://assets/robot_damaged_shoot_strip4.png")
 var tex_shield = preload("res://assets/shield_energy_barrier_64x64.png")
 var tex_jump = preload("res://assets/robot_jump_strip3.png")
+var tex_dash = preload("res://assets/robot_dash_strip2.png")
 
 var anim_timer: float = 0.0
+var sprite_scale_mod: Vector2 = Vector2.ONE
 
 func _ready() -> void:
 	add_to_group("player")
@@ -172,15 +180,44 @@ func _physics_process(dt: float) -> void:
 		dash_timer -= dt
 		velocity.y = 0.0
 		velocity.x = dash_speed * facing_direction
+
+		# Dynamic Dash Animation & Orientation
+		sprite.texture = tex_dash
+		sprite.hframes = 2
+		sprite.frame = 1 if dash_timer < (dash_duration * 0.5) else 0
+		sprite.scale.x = facing_direction
+		sprite.offset = Vector2(0, 0)
+
+		# Spawn ghost trail while dashing
+		dash_ghost_timer -= dt
+		if dash_ghost_timer <= 0.0:
+			dash_ghost_timer = DASH_GHOST_INTERVAL
+			_spawn_dash_ghost()
+
 		if dash_timer <= 0.0:
 			is_dashing = false
 			dash_cooldown = 0.45
+			if dash_particles:
+				dash_particles.emitting = false
 		move_and_slide()
 		return
 
 	if Input.is_action_just_pressed("dash") and dash_cooldown <= 0.0 and not is_dashing and GameManager.consume_ep(15.0):
 		is_dashing = true
 		dash_timer = dash_duration
+		dash_ghost_timer = DASH_GHOST_INTERVAL
+
+		sprite.texture = tex_dash
+		sprite.hframes = 2
+		sprite.frame = 0
+		sprite.scale.x = facing_direction
+		sprite.offset = Vector2(0, 0)
+
+		if dash_particles:
+			dash_particles.direction = Vector2(-facing_direction, 0)
+			dash_particles.emitting = true
+
+		_spawn_dash_ghost()
 		return
 
 	# 6. Handle Crouch [S] / [DOWN] with Low Ceiling Lock
@@ -264,6 +301,7 @@ func _physics_process(dt: float) -> void:
 		elif can_double_jump and not has_double_jumped and GameManager.consume_ep(10.0):
 			velocity.y = double_jump_velocity
 			has_double_jumped = true
+			_trigger_air_jump_effect()
 
 	# 9. Horizontal Movement
 	if wall_jump_lock_timer > 0.0:
@@ -314,6 +352,13 @@ func _handle_attacks(dt: float) -> void:
 		var drain = 28.0 * dt
 		GameManager.player_ep = max(0.0, GameManager.player_ep - drain)
 		GameManager.player_energy_changed.emit(GameManager.player_ep, GameManager.player_max_ep)
+
+		var mouse_pos = get_global_mouse_position()
+		if mouse_pos.x < global_position.x - 4.0:
+			facing_direction = -1
+		elif mouse_pos.x > global_position.x + 4.0:
+			facing_direction = 1
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 
 		sprite.texture = tex_damaged_shoot if is_dmg else tex_standard_shoot
 		sprite.hframes = 4
@@ -378,6 +423,8 @@ func _handle_attacks(dt: float) -> void:
 			melee_hitbox.position = Vector2((30 if is_bat else 24) * facing_direction, hit_y)
 		elif weapon_type == "ranged":
 			_fire_ranged(weapon_id)
+		elif sec_type == "ranged":
+			_fire_ranged(sec_id)
 
 	# Secondary Attack: [Z]
 	elif Input.is_action_just_pressed("attack_ranged"):
@@ -393,6 +440,13 @@ func _handle_attacks(dt: float) -> void:
 			melee_hitbox.position = Vector2((30 if is_bat else 24) * facing_direction, hit_y)
 
 func _fire_ranged(weapon_id: String) -> void:
+	var mouse_pos = get_global_mouse_position()
+	if mouse_pos.x < global_position.x - 4.0:
+		facing_direction = -1
+	elif mouse_pos.x > global_position.x + 4.0:
+		facing_direction = 1
+	sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+
 	if weapon_id == "flamethrower":
 		if GameManager.consume_ep(8.0):
 			_spawn_flame_puff()
@@ -406,21 +460,44 @@ func _fire_ranged(weapon_id: String) -> void:
 	attack_duration = 0.20
 	attack_timer = 0.20
 
-	var proj = preload("res://scenes/projectile_laser.tscn").instantiate()
-	var hand_y = position.y + (6 if is_crouching else 0)
-	proj.position = Vector2(position.x + 20 * facing_direction, hand_y)
-	proj.direction = Vector2(facing_direction, 0)
-	get_parent().add_child(proj)
+	var hand_pos = global_position + Vector2(18 * facing_direction, 6 if is_crouching else -2)
+	var aim_dir = (mouse_pos - hand_pos).normalized()
+	if aim_dir.length_squared() == 0:
+		aim_dir = Vector2(facing_direction, 0)
+
+	var parent_node = get_parent()
+	if parent_node:
+		var proj = preload("res://scenes/projectile_laser.tscn").instantiate()
+		parent_node.add_child(proj)
+		proj.global_position = hand_pos
+		proj.direction = aim_dir
+		proj.rotation = aim_dir.angle()
 
 func _spawn_flame_puff() -> void:
 	var flame_scene = load("res://scenes/projectile_flame.tscn")
 	if not flame_scene:
 		return
-	var flame = flame_scene.instantiate()
-	var hand_y = position.y + (6 if is_crouching else 0)
-	flame.position = Vector2(position.x + 24 * facing_direction, hand_y + randf_range(-3.0, 3.0))
-	flame.direction = Vector2(facing_direction, randf_range(-0.12, 0.12)).normalized()
-	get_parent().add_child(flame)
+	var mouse_pos = get_global_mouse_position()
+	if mouse_pos.x < global_position.x - 4.0:
+		facing_direction = -1
+	elif mouse_pos.x > global_position.x + 4.0:
+		facing_direction = 1
+	sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+
+	var spawn_pos = global_position + Vector2(20 * facing_direction, 6 if is_crouching else -2)
+	var aim_dir = (mouse_pos - spawn_pos).normalized()
+	if aim_dir.length_squared() == 0:
+		aim_dir = Vector2(facing_direction, 0)
+
+	aim_dir = aim_dir.rotated(randf_range(-0.14, 0.14))
+
+	var parent_node = get_parent()
+	if parent_node:
+		var flame = flame_scene.instantiate()
+		parent_node.add_child(flame)
+		flame.global_position = spawn_pos + aim_dir * 6.0
+		flame.direction = aim_dir
+		flame.rotation = aim_dir.angle()
 
 func _handle_grenade_aiming(_dt: float) -> void:
 	if Input.is_action_just_pressed("grenade"):
@@ -666,6 +743,7 @@ func _update_animations(dt: float, input_dir: float) -> void:
 	if is_crouching:
 		sprite.texture = tex_damaged_crouch if is_dmg else tex_standard_crouch
 		sprite.hframes = 2
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		if input_dir != 0.0:
 			# Crouch Walk: animated crawl cycle synchronized with movement speed + subtle crawl bob
 			var crawl_frame = int(anim_timer * 7.5) % 2
@@ -680,24 +758,26 @@ func _update_animations(dt: float, input_dir: float) -> void:
 		sprite.texture = tex_jump
 		sprite.hframes = 3
 		sprite.frame = 1
-		sprite.scale.x = wall_direction
+		sprite.scale = Vector2(wall_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 	elif not is_on_floor():
 		sprite.texture = tex_jump
 		sprite.hframes = 3
 		sprite.frame = 0 if velocity.y < 0.0 else 2
-		sprite.scale.x = facing_direction
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 	elif input_dir != 0.0:
 		sprite.texture = tex_damaged_walk if is_dmg else tex_standard_walk
 		sprite.hframes = 8
 		var speed_mult = 12.0 if is_sprinting else 8.0
 		sprite.frame = int(anim_timer * speed_mult) % 8
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 	else:
 		sprite.texture = tex_damaged_idle if is_dmg else tex_standard_idle
 		sprite.hframes = 4
 		sprite.frame = int(anim_timer * 4.0) % 4
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 
 # SAFE MELEE HIT: PASSES BOTH (amount, knockback) TO PREVENT ENGINE CRASH!
@@ -732,6 +812,9 @@ func take_damage(amount: float, knockback_dir: float = 0.0) -> void:
 func die_in_hazard(hazard_name: String = "acid") -> void:
 	if is_grappling:
 		_release_grapple()
+	is_dashing = false
+	if dash_particles:
+		dash_particles.emitting = false
 
 	velocity = Vector2.ZERO
 	GameManager.player_hp = GameManager.player_max_hp
@@ -753,3 +836,51 @@ func die_in_hazard(hazard_name: String = "acid") -> void:
 
 func _die() -> void:
 	die_in_hazard("defeated")
+
+func _spawn_dash_ghost() -> void:
+	var parent_node = get_parent()
+	if not parent_node or not sprite:
+		return
+	var ghost = DashGhostClass.new()
+	parent_node.add_child(ghost)
+	ghost.init(
+		sprite.texture,
+		sprite.hframes,
+		sprite.frame,
+		sprite.scale,
+		sprite.offset,
+		sprite.global_position,
+		Color(0.25, 0.85, 1.0, 0.75),
+		0.25
+	)
+
+func _trigger_air_jump_effect() -> void:
+	var parent_node = get_parent()
+	if parent_node and AirJumpEffectScene:
+		var fx = AirJumpEffectScene.instantiate()
+		parent_node.add_child(fx)
+		fx.global_position = global_position + Vector2(0, 14)
+
+	# Spawn jump ghost at takeoff point with electric cyan tint
+	if parent_node and sprite:
+		var ghost = DashGhostClass.new()
+		parent_node.add_child(ghost)
+		ghost.init(
+			sprite.texture,
+			sprite.hframes,
+			sprite.frame,
+			sprite.scale,
+			sprite.offset,
+			sprite.global_position,
+			Color(0.35, 0.9, 1.0, 0.65),
+			0.22
+		)
+
+	# Squash & stretch impulse tween on the robot chassis
+	sprite_scale_mod = Vector2(1.22, 0.78)
+	var tw = create_tween()
+	if tw:
+		tw.tween_property(self, "sprite_scale_mod", Vector2(0.85, 1.25), 0.06).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(self, "sprite_scale_mod", Vector2(1.0, 1.0), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+
