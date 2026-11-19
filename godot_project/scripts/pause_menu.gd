@@ -9,6 +9,7 @@ var pending_difficulty_idx: int = -1
 # UI References
 var tab_buttons: Array[Button] = []
 var tab_pages: Array[Control] = []
+var tab_scrolls: Array[ScrollContainer] = []
 var header_diff_lbl: Label = null
 var ai_quote_lbl: Label = null
 var diff_card_buttons: Array[Button] = []
@@ -123,6 +124,55 @@ func _style_button(btn: Button, bg: Color, border: Color, hover_bg: Color, font_
 	btn.add_theme_color_override("font_pressed_color", Color.WHITE)
 	btn.add_theme_font_size_override("font_size", f_size)
 
+func _set_margins(mc: MarginContainer, left: int, top: int, right: int, bottom: int) -> void:
+	mc.add_theme_constant_override("margin_left", left)
+	mc.add_theme_constant_override("margin_top", top)
+	mc.add_theme_constant_override("margin_right", right)
+	mc.add_theme_constant_override("margin_bottom", bottom)
+
+func _create_scrollable_tab_page(title_text: String, subtitle_text: String) -> Dictionary:
+	var page := VBoxContainer.new()
+	page.add_theme_constant_override("separation", 8)
+	page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var hdr := Label.new()
+	hdr.text = title_text
+	hdr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hdr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hdr.add_theme_color_override("font_color", Color(0.22, 0.85, 1.0))
+	hdr.add_theme_font_size_override("font_size", 12)
+	page.add_child(hdr)
+
+	var sub: Label = null
+	if subtitle_text != "":
+		sub = Label.new()
+		sub.text = subtitle_text
+		sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		sub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sub.add_theme_color_override("font_color", Color(0.68, 0.76, 0.86))
+		sub.add_theme_font_size_override("font_size", 10)
+		page.add_child(sub)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	page.add_child(scroll)
+
+	var scroll_margin := MarginContainer.new()
+	scroll_margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_set_margins(scroll_margin, 0, 0, 6, 0)
+	scroll.add_child(scroll_margin)
+
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 8)
+	scroll_margin.add_child(content)
+
+	return {"page": page, "scroll": scroll, "content": content, "subtitle": sub}
+
 func _build_ui() -> void:
 	# 1. Fullscreen Dark Blur/Dimmer Backdrop
 	var dimmer = ColorRect.new()
@@ -130,8 +180,8 @@ func _build_ui() -> void:
 	dimmer.color = Color(0.02, 0.04, 0.07, 0.86)
 	add_child(dimmer)
 
-	# 2. Main Centered Cyberpunk Window (760 x 460 inside 960 x 540 viewport)
-	var main_panel = PanelContainer.new()
+	# 2. Main Centered Cyberpunk Window (Fixed 760 x 460 inside 960 x 540 viewport)
+	var main_panel = Panel.new()
 	main_panel.anchor_left = 0.5
 	main_panel.anchor_top = 0.5
 	main_panel.anchor_right = 0.5
@@ -140,15 +190,25 @@ func _build_ui() -> void:
 	main_panel.offset_top = -230.0
 	main_panel.offset_right = 380.0
 	main_panel.offset_bottom = 230.0
-	main_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 0.98), Color(0.22, 0.74, 0.97, 0.9), 2, 8, 14))
+	main_panel.custom_minimum_size = Vector2(760, 460)
+	main_panel.clip_contents = true
+	main_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 0.98), Color(0.22, 0.74, 0.97, 0.9), 2, 8, 0))
 	add_child(main_panel)
 
+	var main_margin = MarginContainer.new()
+	main_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_set_margins(main_margin, 14, 14, 14, 14)
+	main_panel.add_child(main_margin)
+
 	var root_vbox = VBoxContainer.new()
+	root_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root_vbox.add_theme_constant_override("separation", 10)
-	main_panel.add_child(root_vbox)
+	main_margin.add_child(root_vbox)
 
 	# 3. Top Header Banner
 	var header_panel = PanelContainer.new()
+	header_panel.custom_minimum_size = Vector2(0, 38)
 	header_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.08, 0.13, 0.21, 1.0), Color(0.22, 0.74, 0.97, 0.45), 1, 6, 8))
 	root_vbox.add_child(header_panel)
 
@@ -163,26 +223,36 @@ func _build_ui() -> void:
 	header_hbox.add_child(title_lbl)
 
 	header_diff_lbl = Label.new()
-	header_diff_lbl.text = "DIFICULTATE: THE EASIEST (HP × 1.0)"
+	header_diff_lbl.text = "DIFICULTATE: THE EASIEST"
 	header_diff_lbl.add_theme_color_override("font_color", Color(0.22, 0.88, 0.55))
 	header_diff_lbl.add_theme_font_size_override("font_size", 12)
 	header_hbox.add_child(header_diff_lbl)
 
 	# 4. Split Content: Left Sidebar + Right Tab Pages
 	var body_hbox = HBoxContainer.new()
+	body_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body_hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body_hbox.add_theme_constant_override("separation", 12)
 	root_vbox.add_child(body_hbox)
 
-	# --- LEFT SIDEBAR ---
-	var sidebar_panel = PanelContainer.new()
-	sidebar_panel.custom_minimum_size = Vector2(200, 0)
-	sidebar_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.07, 0.1, 0.16, 1.0), Color(0.18, 0.26, 0.38, 1.0), 1, 6, 10))
+	# --- LEFT SIDEBAR (Fixed width, never shifts between tabs) ---
+	var sidebar_panel = Panel.new()
+	sidebar_panel.custom_minimum_size = Vector2(205, 0)
+	sidebar_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sidebar_panel.clip_contents = true
+	sidebar_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.07, 0.1, 0.16, 1.0), Color(0.18, 0.26, 0.38, 1.0), 1, 6, 0))
 	body_hbox.add_child(sidebar_panel)
 
+	var side_margin = MarginContainer.new()
+	side_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_set_margins(side_margin, 10, 10, 10, 10)
+	sidebar_panel.add_child(side_margin)
+
 	var side_vbox = VBoxContainer.new()
+	side_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	side_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side_vbox.add_theme_constant_override("separation", 7)
-	sidebar_panel.add_child(side_vbox)
+	side_margin.add_child(side_vbox)
 
 	var nav_lbl = Label.new()
 	nav_lbl.text = "MENIU CONFIGURARE"
@@ -245,21 +315,28 @@ func _build_ui() -> void:
 	btn_quit.pressed.connect(func(): get_tree().quit())
 	side_vbox.add_child(btn_quit)
 
-	# --- RIGHT CONTENT PANEL ---
-	var content_panel = PanelContainer.new()
+	# --- RIGHT CONTENT PANEL (Fixed size, scrollable inside each tab) ---
+	var content_panel = Panel.new()
 	content_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.07, 0.1, 0.16, 1.0), Color(0.18, 0.26, 0.38, 1.0), 1, 6, 12))
+	content_panel.clip_contents = true
+	content_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.07, 0.1, 0.16, 1.0), Color(0.18, 0.26, 0.38, 1.0), 1, 6, 0))
 	body_hbox.add_child(content_panel)
 
+	var content_margin = MarginContainer.new()
+	content_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_set_margins(content_margin, 12, 12, 12, 12)
+	content_panel.add_child(content_margin)
+
 	tab_pages.clear()
+	tab_scrolls.clear()
 	var page_diff = _build_difficulty_page()
 	var page_audio = _build_audio_page()
 	var page_gameplay = _build_gameplay_page()
 	var page_controls = _build_controls_page()
 
 	for p in [page_diff, page_audio, page_gameplay, page_controls]:
-		content_panel.add_child(p)
+		content_margin.add_child(p)
 		tab_pages.append(p)
 
 	# 5. Confirmation Warning Overlay (Hidden until user changes difficulty or requests level reset)
@@ -267,25 +344,17 @@ func _build_ui() -> void:
 	_switch_tab(0)
 
 # -------------------------------------------------------------------------
-# TAB 0: DIFFICULTY PAGE ("Will You Snail?" Humor + HP * Difficulty Formula)
+# TAB 0: DIFFICULTY PAGE ("Will You Snail?" Humor + Clean Tier Descriptions)
 # -------------------------------------------------------------------------
 func _build_difficulty_page() -> Control:
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 8)
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	var hdr = Label.new()
-	hdr.text = "CALIBRARE DIFICULTATE AI  •  FORMULA: INAMICI HP = HP × DIFFICULTY"
-	hdr.add_theme_color_override("font_color", Color(0.22, 0.85, 1.0))
-	hdr.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(hdr)
-
-	var sub = Label.new()
-	sub.text = "Alege cât de 'ușor' vrei să fie jocul. (Atenție: Schimbarea dificultății resetează nivelul curent!)"
-	sub.add_theme_color_override("font_color", Color(0.68, 0.76, 0.86))
-	sub.add_theme_font_size_override("font_size", 10)
-	vbox.add_child(sub)
+	var built := _create_scrollable_tab_page(
+		"CALIBRARE DIFICULTATE AI",
+		"Alege nivelul de dificultate dorit. (Atenție: Schimbarea dificultății resetează nivelul curent!)"
+	)
+	var page: VBoxContainer = built["page"]
+	var scroll: ScrollContainer = built["scroll"]
+	var list_vbox: VBoxContainer = built["content"]
+	tab_scrolls.append(scroll)
 
 	diff_card_buttons.clear()
 	diff_card_panels.clear()
@@ -293,20 +362,23 @@ func _build_difficulty_page() -> Control:
 	for i in range(GameManager.DIFFICULTY_TIERS.size()):
 		var tier = GameManager.DIFFICULTY_TIERS[i]
 		var card = PanelContainer.new()
-		card.custom_minimum_size = Vector2(0, 56)
-		vbox.add_child(card)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.custom_minimum_size = Vector2(0, 60)
+		list_vbox.add_child(card)
 		diff_card_panels.append(card)
 
 		var chbox = HBoxContainer.new()
+		chbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		chbox.add_theme_constant_override("separation", 10)
 		card.add_child(chbox)
 
 		var info_vbox = VBoxContainer.new()
 		info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		info_vbox.add_theme_constant_override("separation", 2)
+		info_vbox.add_theme_constant_override("separation", 3)
 		chbox.add_child(info_vbox)
 
 		var name_row = HBoxContainer.new()
+		name_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_row.add_theme_constant_override("separation", 8)
 		info_vbox.add_child(name_row)
 
@@ -318,38 +390,52 @@ func _build_difficulty_page() -> Control:
 
 		var t_tag = Label.new()
 		t_tag.text = "[" + tier["tag"] + "]"
+		t_tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		t_tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		t_tag.add_theme_color_override("font_color", Color(0.65, 0.72, 0.82))
 		t_tag.add_theme_font_size_override("font_size", 10)
 		name_row.add_child(t_tag)
 
-		var formula_lbl = Label.new()
-		formula_lbl.text = "Multiplicator Inamici & Boss:  HP = Base_HP × " + str(tier["mult"]) + "   (ex: Boss = " + str(int(650.0 * float(tier["mult"]))) + " HP)"
-		formula_lbl.add_theme_color_override("font_color", Color(0.85, 0.9, 0.96))
-		formula_lbl.add_theme_font_size_override("font_size", 10)
-		info_vbox.add_child(formula_lbl)
+		var desc_lbl = Label.new()
+		desc_lbl.text = tier["desc"]
+		desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		desc_lbl.add_theme_color_override("font_color", Color(0.85, 0.9, 0.96))
+		desc_lbl.add_theme_font_size_override("font_size", 10)
+		info_vbox.add_child(desc_lbl)
 
 		var sel_btn = Button.new()
 		sel_btn.custom_minimum_size = Vector2(115, 34)
+		sel_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var tier_idx = i
 		sel_btn.mouse_entered.connect(func(): _show_ai_quote(tier_idx))
 		sel_btn.pressed.connect(func(): _on_difficulty_card_clicked(tier_idx))
 		chbox.add_child(sel_btn)
 		diff_card_buttons.append(sel_btn)
 
-	# AI Sarcastic Quote Box at the bottom (Will You Snail style!)
-	var quote_panel = PanelContainer.new()
-	quote_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	quote_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.04, 0.06, 0.1, 1.0), Color(0.96, 0.62, 0.08, 0.6), 1, 6, 8))
-	vbox.add_child(quote_panel)
+	# AI Sarcastic Quote Box pinned at bottom (Fixed height so window never grows)
+	var quote_panel = Panel.new()
+	quote_panel.custom_minimum_size = Vector2(0, 56)
+	quote_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	quote_panel.clip_contents = true
+	quote_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.04, 0.06, 0.1, 1.0), Color(0.96, 0.62, 0.08, 0.6), 1, 6, 0))
+	page.add_child(quote_panel)
+
+	var q_margin = MarginContainer.new()
+	q_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_set_margins(q_margin, 8, 6, 8, 6)
+	quote_panel.add_child(q_margin)
 
 	ai_quote_lbl = Label.new()
 	ai_quote_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ai_quote_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ai_quote_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	ai_quote_lbl.text = "🤖 AI-UL SCRAPBORN: " + GameManager.DIFFICULTY_TIERS[0]["quote"]
 	ai_quote_lbl.add_theme_color_override("font_color", Color(0.98, 0.82, 0.45))
-	ai_quote_lbl.add_theme_font_size_override("font_size", 11)
-	quote_panel.add_child(ai_quote_lbl)
+	ai_quote_lbl.add_theme_font_size_override("font_size", 10)
+	q_margin.add_child(ai_quote_lbl)
 
-	return vbox
+	return page
 
 func _show_ai_quote(tier_idx: int) -> void:
 	if ai_quote_lbl and tier_idx >= 0 and tier_idx < GameManager.DIFFICULTY_TIERS.size():
@@ -366,22 +452,14 @@ func _on_difficulty_card_clicked(tier_idx: int) -> void:
 # TAB 1: AUDIO SETTINGS PAGE (Master, SFX, Music, Ambience + Mute)
 # -------------------------------------------------------------------------
 func _build_audio_page() -> Control:
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 12)
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	var hdr = Label.new()
-	hdr.text = "MIXER AUDIO & CANALE DE SUNET (MASTER / SFX / MUSIC / AMBIENCE)"
-	hdr.add_theme_color_override("font_color", Color(0.22, 0.85, 1.0))
-	hdr.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(hdr)
-
-	var sub = Label.new()
-	sub.text = "Controlează volumul general și canalele individuale pentru efecte sonore (SFX), muzică și ambianță."
-	sub.add_theme_color_override("font_color", Color(0.68, 0.76, 0.86))
-	sub.add_theme_font_size_override("font_size", 10)
-	vbox.add_child(sub)
+	var built := _create_scrollable_tab_page(
+		"MIXER AUDIO & CANALE DE SUNET (MASTER / SFX / MUSIC / AMBIENCE)",
+		"Controlează volumul general și canalele individuale pentru efecte sonore (SFX), muzică și ambianță."
+	)
+	var page: VBoxContainer = built["page"]
+	var scroll: ScrollContainer = built["scroll"]
+	var vbox: VBoxContainer = built["content"]
+	tab_scrolls.append(scroll)
 
 	# Build 4 Audio Channel Controls
 	var r_master = _create_audio_row(vbox, "MASTER VOLUME (Volum General)", "Controlează întregul output audio al jocului (AudioServer Master Bus)", GameManager.audio_master_volume, func(v):
@@ -437,7 +515,7 @@ func _build_audio_page() -> Control:
 	btn_mute_amb = r_amb["mute_btn"]
 
 	var bottom_hbox = HBoxContainer.new()
-	vbox.add_child(bottom_hbox)
+	page.add_child(bottom_hbox)
 
 	var btn_reset_audio = Button.new()
 	btn_reset_audio.text = "↺ RESETEAZĂ VOLUMUL LA DEFAULT"
@@ -457,22 +535,26 @@ func _build_audio_page() -> Control:
 	)
 	bottom_hbox.add_child(btn_reset_audio)
 
-	return vbox
+	return page
 
 func _create_audio_row(parent: Control, title: String, desc: String, init_val: float, on_slide: Callable, on_mute: Callable) -> Dictionary:
 	var card = PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 1.0), Color(0.16, 0.24, 0.36, 1.0), 1, 5, 8))
 	parent.add_child(card)
 
 	var row_vbox = VBoxContainer.new()
+	row_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row_vbox.add_theme_constant_override("separation", 4)
 	card.add_child(row_vbox)
 
 	var top_hbox = HBoxContainer.new()
+	top_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row_vbox.add_child(top_hbox)
 
 	var t_lbl = Label.new()
 	t_lbl.text = title
+	t_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	t_lbl.add_theme_color_override("font_color", Color(0.92, 0.96, 1.0))
 	t_lbl.add_theme_font_size_override("font_size", 11)
 	t_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -480,11 +562,14 @@ func _create_audio_row(parent: Control, title: String, desc: String, init_val: f
 
 	var d_lbl = Label.new()
 	d_lbl.text = desc
+	d_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	d_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	d_lbl.add_theme_color_override("font_color", Color(0.55, 0.65, 0.78))
 	d_lbl.add_theme_font_size_override("font_size", 9)
 	row_vbox.add_child(d_lbl)
 
 	var ctrl_hbox = HBoxContainer.new()
+	ctrl_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ctrl_hbox.add_theme_constant_override("separation", 10)
 	row_vbox.add_child(ctrl_hbox)
 
@@ -518,38 +603,44 @@ func _create_audio_row(parent: Control, title: String, desc: String, init_val: f
 # TAB 2: GAMEPLAY & VIDEO PAGE (Auto-Pickup, Screen Shake, Chassis Skin, Fullscreen)
 # -------------------------------------------------------------------------
 func _build_gameplay_page() -> Control:
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	var hdr = Label.new()
-	hdr.text = "OPȚIUNI GAMEPLAY, CAMERĂ & PERSONALIZARE ȘASIU"
-	hdr.add_theme_color_override("font_color", Color(0.22, 0.85, 1.0))
-	hdr.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(hdr)
+	var built := _create_scrollable_tab_page(
+		"OPȚIUNI GAMEPLAY, CAMERĂ & PERSONALIZARE ȘASIU",
+		"Configurează colectarea automată, efectele de cameră, aspectul șasiului și modul de afișare."
+	)
+	var page: VBoxContainer = built["page"]
+	var scroll: ScrollContainer = built["scroll"]
+	var vbox: VBoxContainer = built["content"]
+	tab_scrolls.append(scroll)
 
 	# 1. Auto-Pickup Dropped Items Toggle
 	var card_pickup = PanelContainer.new()
+	card_pickup.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_pickup.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 1.0), Color(0.16, 0.24, 0.36, 1.0), 1, 5, 9))
 	vbox.add_child(card_pickup)
 	var hb_pickup = HBoxContainer.new()
+	hb_pickup.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb_pickup.add_theme_constant_override("separation", 10)
 	card_pickup.add_child(hb_pickup)
 	var vb_p = VBoxContainer.new()
 	vb_p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb_pickup.add_child(vb_p)
 	var lbl_p1 = Label.new()
 	lbl_p1.text = "AUTO-PICKUP ITEME DE PE JOS"
+	lbl_p1.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_p1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl_p1.add_theme_color_override("font_color", Color.WHITE)
 	lbl_p1.add_theme_font_size_override("font_size", 11)
 	vb_p.add_child(lbl_p1)
 	var lbl_p2 = Label.new()
-	lbl_p2.text = "Colectează automat armele și grenadele de pe jos când treci peste ele (fără a mai apăsa [E])."
+	lbl_p2.text = "Colectează automat armele, bandajele și grenadele de pe jos când treci peste ele."
+	lbl_p2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_p2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl_p2.add_theme_color_override("font_color", Color(0.6, 0.7, 0.82))
 	lbl_p2.add_theme_font_size_override("font_size", 9)
 	vb_p.add_child(lbl_p2)
 	btn_auto_pickup = Button.new()
 	btn_auto_pickup.custom_minimum_size = Vector2(125, 30)
+	btn_auto_pickup.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	btn_auto_pickup.pressed.connect(func():
 		GameManager.setting_auto_pickup = not GameManager.setting_auto_pickup
 		_refresh_gameplay_ui()
@@ -558,16 +649,21 @@ func _build_gameplay_page() -> Control:
 
 	# 2. Screen Shake Intensity Slider
 	var card_shake = PanelContainer.new()
+	card_shake.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_shake.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 1.0), Color(0.16, 0.24, 0.36, 1.0), 1, 5, 9))
 	vbox.add_child(card_shake)
 	var vb_shake = VBoxContainer.new()
+	vb_shake.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_shake.add_child(vb_shake)
 	var lbl_s1 = Label.new()
 	lbl_s1.text = "INTENSITATE CAMERA SHAKE (Explozii Grenade & Impact Boss)"
+	lbl_s1.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_s1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl_s1.add_theme_color_override("font_color", Color.WHITE)
 	lbl_s1.add_theme_font_size_override("font_size", 11)
 	vb_shake.add_child(lbl_s1)
 	var hb_shake = HBoxContainer.new()
+	hb_shake.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb_shake.add_theme_constant_override("separation", 10)
 	vb_shake.add_child(hb_shake)
 	slider_shake = HSlider.new()
@@ -590,25 +686,33 @@ func _build_gameplay_page() -> Control:
 
 	# 3. Robot Chassis Visual Model (Standard vs Battle-Damaged)
 	var card_skin = PanelContainer.new()
+	card_skin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_skin.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 1.0), Color(0.16, 0.24, 0.36, 1.0), 1, 5, 9))
 	vbox.add_child(card_skin)
 	var hb_skin = HBoxContainer.new()
+	hb_skin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb_skin.add_theme_constant_override("separation", 10)
 	card_skin.add_child(hb_skin)
 	var vb_sk = VBoxContainer.new()
 	vb_sk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb_skin.add_child(vb_sk)
 	var lbl_sk1 = Label.new()
 	lbl_sk1.text = "STIL VIZUAL ȘASIU ROBOT (SKIN)"
+	lbl_sk1.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_sk1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl_sk1.add_theme_color_override("font_color", Color.WHITE)
 	lbl_sk1.add_theme_font_size_override("font_size", 11)
 	vb_sk.add_child(lbl_sk1)
 	var lbl_sk2 = Label.new()
 	lbl_sk2.text = "Schimbă aspectul robotului între Standard Cyber-Blue și Battle-Damaged Scrap."
+	lbl_sk2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_sk2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lbl_sk2.add_theme_color_override("font_color", Color(0.6, 0.7, 0.82))
 	lbl_sk2.add_theme_font_size_override("font_size", 9)
 	vb_sk.add_child(lbl_sk2)
 	btn_chassis = Button.new()
 	btn_chassis.custom_minimum_size = Vector2(150, 30)
+	btn_chassis.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	btn_chassis.pressed.connect(func():
 		GameManager.player_chassis = "damaged" if GameManager.player_chassis == "standard" else "standard"
 		_refresh_gameplay_ui()
@@ -617,18 +721,23 @@ func _build_gameplay_page() -> Control:
 
 	# 4. Fullscreen / Windowed Mode
 	var card_fs = PanelContainer.new()
+	card_fs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_fs.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 1.0), Color(0.16, 0.24, 0.36, 1.0), 1, 5, 9))
 	vbox.add_child(card_fs)
 	var hb_fs = HBoxContainer.new()
+	hb_fs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hb_fs.add_theme_constant_override("separation", 10)
 	card_fs.add_child(hb_fs)
 	var lbl_fs = Label.new()
 	lbl_fs.text = "MOD AFIȘARE ECRAN (DISPLAY MODE)"
+	lbl_fs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl_fs.add_theme_color_override("font_color", Color.WHITE)
 	lbl_fs.add_theme_font_size_override("font_size", 11)
 	lbl_fs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hb_fs.add_child(lbl_fs)
 	btn_fullscreen = Button.new()
 	btn_fullscreen.custom_minimum_size = Vector2(150, 30)
+	btn_fullscreen.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	btn_fullscreen.pressed.connect(func():
 		GameManager.setting_fullscreen = not GameManager.setting_fullscreen
 		if GameManager.setting_fullscreen:
@@ -639,39 +748,23 @@ func _build_gameplay_page() -> Control:
 	)
 	hb_fs.add_child(btn_fullscreen)
 
-	return vbox
+	return page
 
 # -------------------------------------------------------------------------
 # TAB 3: INTERACTIVE KEYBINDS CUSTOMIZATION PAGE
 # -------------------------------------------------------------------------
 func _build_controls_page() -> Control:
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var built := _create_scrollable_tab_page(
+		"CONFIGURARE KEYBINDS (ARME, GRENADE, SCUT & MIȘCARE)",
+		"Apasă pe butonul din dreapta oricărei acțiuni pentru a-i asigna o tastă nouă sau un click de mouse."
+	)
+	var page: VBoxContainer = built["page"]
+	var scroll: ScrollContainer = built["scroll"]
+	var list_vbox: VBoxContainer = built["content"]
+	keybind_status_lbl = built["subtitle"]
+	tab_scrolls.append(scroll)
 
-	var hdr = Label.new()
-	hdr.text = "CONFIGURARE KEYBINDS (ARME, GRENADE, SCUT & MIȘCARE)"
-	hdr.add_theme_color_override("font_color", Color(0.22, 0.85, 1.0))
-	hdr.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(hdr)
-
-	keybind_status_lbl = Label.new()
-	keybind_status_lbl.text = "Apasă pe butonul din dreapta oricărei acțiuni pentru a-i asigna o tastă nouă sau un click de mouse."
-	keybind_status_lbl.add_theme_color_override("font_color", Color(0.68, 0.76, 0.86))
-	keybind_status_lbl.add_theme_font_size_override("font_size", 10)
-	vbox.add_child(keybind_status_lbl)
-
-	var scroll = ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	vbox.add_child(scroll)
-
-	var list_vbox = VBoxContainer.new()
-	list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list_vbox.add_theme_constant_override("separation", 5)
-	scroll.add_child(list_vbox)
 
 	keybind_buttons.clear()
 	var last_cat: String = ""
@@ -685,20 +778,25 @@ func _build_controls_page() -> Control:
 			last_cat = cat
 			var cat_lbl = Label.new()
 			cat_lbl.text = "▸ " + cat
+			cat_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			cat_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			cat_lbl.add_theme_color_override("font_color", Color(0.96, 0.68, 0.15))
 			cat_lbl.add_theme_font_size_override("font_size", 11)
 			list_vbox.add_child(cat_lbl)
 
 		var row_card = PanelContainer.new()
+		row_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row_card.add_theme_stylebox_override("panel", _make_stylebox(Color(0.05, 0.08, 0.13, 1.0), Color(0.16, 0.24, 0.36, 1.0), 1, 5, 6))
 		list_vbox.add_child(row_card)
 
 		var row_hbox = HBoxContainer.new()
+		row_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row_hbox.add_theme_constant_override("separation", 10)
 		row_card.add_child(row_hbox)
 
 		var d_lbl = Label.new()
 		d_lbl.text = act_label
+		d_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		d_lbl.add_theme_color_override("font_color", Color(0.9, 0.94, 0.99))
 		d_lbl.add_theme_font_size_override("font_size", 11)
 		d_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -706,6 +804,7 @@ func _build_controls_page() -> Control:
 
 		var k_btn = Button.new()
 		k_btn.custom_minimum_size = Vector2(165, 26)
+		k_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var captured_act = act_id
 		k_btn.pressed.connect(func(): _start_listening_for_keybind(captured_act))
 		row_hbox.add_child(k_btn)
@@ -713,7 +812,7 @@ func _build_controls_page() -> Control:
 
 	var bottom_hbox = HBoxContainer.new()
 	bottom_hbox.add_theme_constant_override("separation", 12)
-	vbox.add_child(bottom_hbox)
+	page.add_child(bottom_hbox)
 
 	var btn_reset_kb = Button.new()
 	btn_reset_kb.text = "↺ RESETEAZĂ TOATE KEYBINDS LA DEFAULT"
@@ -726,7 +825,7 @@ func _build_controls_page() -> Control:
 	)
 	bottom_hbox.add_child(btn_reset_kb)
 
-	return vbox
+	return page
 
 func _start_listening_for_keybind(action_name: String) -> void:
 	listening_for_action = action_name
@@ -801,10 +900,10 @@ func _prompt_difficulty_reset(tier_idx: int, is_manual_restart: bool = false) ->
 	var tier = GameManager.DIFFICULTY_TIERS[tier_idx]
 	if is_manual_restart:
 		warning_title_lbl.text = "⚠ CONFIRMARE RESETARE NIVEL ⚠"
-		warning_desc_lbl.text = "Ești sigur că vrei să resetezi nivelul curent de la început pe dificultatea [%s] (Inamici HP = HP × %.1f)?\n\nTot progresul din această sesiune va fi reinițializat." % [tier["name"], float(tier["mult"])]
+		warning_desc_lbl.text = "Ești sigur că vrei să resetezi nivelul curent de la început pe dificultatea [%s]?\n\n%s\n\nTot progresul din această sesiune va fi reinițializat." % [tier["name"], tier["desc"]]
 	else:
 		warning_title_lbl.text = "⚠ ATENȚIE: SCHIMBAREA DIFICULTĂȚII RESETEAZĂ NIVELUL ⚠"
-		warning_desc_lbl.text = "Ai selectat dificultatea: » %s «\nFormula nouă pentru inamici și Boss:  HP = HP × %.1f\n\nAplicarea noii dificultăți va RESETA complet nivelul curent de la început. Ești sigur că accepți?" % [tier["name"], float(tier["mult"])]
+		warning_desc_lbl.text = "Ai selectat dificultatea: » %s «\n%s\n\nAplicarea noii dificultăți va RESETA complet nivelul curent de la început. Ești sigur că accepți?" % [tier["name"], tier["desc"]]
 	warning_overlay.visible = true
 
 func _on_warning_confirmed() -> void:
@@ -832,6 +931,8 @@ func _switch_tab(idx: int) -> void:
 	current_tab = idx
 	for i in range(tab_pages.size()):
 		tab_pages[i].visible = (i == current_tab)
+	if current_tab >= 0 and current_tab < tab_scrolls.size() and is_instance_valid(tab_scrolls[current_tab]):
+		tab_scrolls[current_tab].scroll_vertical = 0
 	for i in range(tab_buttons.size()):
 		if i == current_tab:
 			_style_button(tab_buttons[i], Color(0.12, 0.28, 0.44), Color(0.22, 0.85, 1.0), Color(0.16, 0.34, 0.52), Color(0.95, 1.0, 1.0), 11)
@@ -870,7 +971,7 @@ func _refresh_difficulty_ui() -> void:
 	var cur_idx = GameManager.difficulty_index
 	var cur_tier = GameManager.DIFFICULTY_TIERS[cur_idx]
 	if header_diff_lbl:
-		header_diff_lbl.text = "DIFICULTATE: %s (HP × %.1f)" % [cur_tier["name"], float(cur_tier["mult"])]
+		header_diff_lbl.text = "DIFICULTATE: %s" % cur_tier["name"]
 		header_diff_lbl.add_theme_color_override("font_color", cur_tier["color"])
 
 	_show_ai_quote(cur_idx)

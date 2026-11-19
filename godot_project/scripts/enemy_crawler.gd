@@ -5,11 +5,14 @@ class_name EnemyCrawler
 @export var patrol_distance: float = 140.0
 @export var speed: float = 45.0
 @export var max_hp: float = 32.0
+@export var contact_damage: float = 20.0
+@export var drop_chance: float = 0.85
 
 var hp: float = 32.0
 var start_x: float = 0.0
 var direction: int = 1
 var anim_timer: float = 0.0
+var is_dead: bool = false
 
 # Grenade Status Timers
 var freeze_timer: float = 0.0
@@ -97,7 +100,7 @@ func _on_damage_body_entered(body: Node2D) -> void:
 		return
 	if body is Player:
 		var kb_dir = 1.0 if body.global_position.x > global_position.x else -1.0
-		body.take_damage(20.0, kb_dir)
+		body.take_damage(GameManager.get_scaled_enemy_damage(contact_damage), kb_dir)
 
 func apply_grenade_effect(g_type: String, blast_pos: Vector2, falloff: float) -> void:
 	var dir = sign(global_position.x - blast_pos.x)
@@ -114,6 +117,8 @@ func apply_grenade_effect(g_type: String, blast_pos: Vector2, falloff: float) ->
 			velocity.y = -140.0 * falloff
 
 func take_damage(amount: float, knockback: float = 0.0) -> void:
+	if is_dead:
+		return
 	hp -= amount
 	if knockback != 0.0:
 		knockback_vel_x = knockback * 140.0
@@ -121,4 +126,6 @@ func take_damage(amount: float, knockback: float = 0.0) -> void:
 	var t = create_tween()
 	t.tween_property(self, "modulate", Color(1, 1, 1), 0.15)
 	if hp <= 0.0:
+		is_dead = true
+		GameManager.spawn_mob_loot(global_position, drop_chance)
 		queue_free()

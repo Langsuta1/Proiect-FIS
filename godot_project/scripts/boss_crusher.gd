@@ -275,7 +275,7 @@ func _process_stalk(dt: float, speed_mult: float) -> void:
 		# Contact stomp knockback if player touches the boss chassis
 		if global_position.distance_to(player_ref.global_position) < 56.0:
 			if player_ref.has_method("take_damage"):
-				player_ref.take_damage(18.0, float(facing_direction))
+				player_ref.take_damage(GameManager.get_scaled_enemy_damage(18.0), float(facing_direction))
 
 	move_and_slide()
 	global_position.x = clamp(global_position.x, ARENA_LEFT + 55.0, ARENA_RIGHT - 55.0)
@@ -365,7 +365,7 @@ func _execute_slam() -> void:
 			if dist_x <= 56.0 and dist_y <= 85.0:
 				var kb = 1.0 if player_ref.global_position.x >= tx else -1.0
 				if player_ref.has_method("take_damage"):
-					player_ref.take_damage(50.0, kb) # 50% MAX HP CRUSHER SLAM!
+					player_ref.take_damage(GameManager.get_scaled_enemy_damage(50.0), kb) # 50% MAX HP CRUSHER SLAM!
 
 func _process_slam_active(_dt: float) -> void:
 	if compactor_piston and not slam_target_xs.is_empty():
@@ -422,7 +422,7 @@ func _update_shockwaves(dt: float) -> void:
 			if abs(px - sw["x"]) <= 24.0 and py >= (FLOOR_Y - sw["h"] - 8.0):
 				sw["hit"] = true
 				if player_ref.has_method("take_damage"):
-					player_ref.take_damage(24.0, sw["dir"])
+					player_ref.take_damage(GameManager.get_scaled_enemy_damage(24.0), sw["dir"])
 				player_ref.velocity.y = -250.0
 
 		if sw["x"] < ARENA_LEFT - 20.0 or sw["x"] > ARENA_RIGHT + 20.0:
@@ -484,7 +484,7 @@ func _update_mortars(dt: float) -> void:
 			if player_ref and player_ref.global_position.distance_to(impact_pos) <= 58.0:
 				var kb = 1.0 if player_ref.global_position.x >= impact_pos.x else -1.0
 				if player_ref.has_method("take_damage"):
-					player_ref.take_damage(25.0, kb)
+					player_ref.take_damage(GameManager.get_scaled_enemy_damage(25.0), kb)
 			mortars.remove_at(i)
 
 # --- ATTACK 4: ROCKET OVERDRIVE CHARGE & WALL CRASH STUN (2x Critical Damage Window!) ---
@@ -522,7 +522,7 @@ func _process_rocket_charge(dt: float, speed_mult: float) -> void:
 		if global_position.distance_to(player_ref.global_position) <= 62.0:
 			charge_hit_player = true
 			if player_ref.has_method("take_damage"):
-				player_ref.take_damage(32.0, float(facing_direction))
+				player_ref.take_damage(GameManager.get_scaled_enemy_damage(32.0), float(facing_direction))
 			player_ref.velocity = Vector2(facing_direction * 280.0, -240.0)
 
 	# Check Wall Crash at Arena Boundaries!
@@ -639,6 +639,7 @@ func _process_defeated_sequence(dt: float) -> void:
 
 	if state_timer <= 0.0:
 		_spawn_explosion_fx("fire", global_position)
+		GameManager.spawn_mob_loot(global_position, 1.0, 3)
 		visible = false
 		set_physics_process(false)
 		if collision_shape:

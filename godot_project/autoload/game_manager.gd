@@ -15,44 +15,53 @@ var player_chassis: String = "standard"
 
 # -------------------------------------------------------------
 # DIFFICULTY SYSTEM ("Will You Snail?" Sarcastic AI Humor Style)
-# Formula for Enemies: hp = base_hp * difficulty_multiplier
+# Scales both enemy HP and enemy damage cleanly per tier
 # -------------------------------------------------------------
 var difficulty_index: int = 0
 var difficulty_name: String = "THE EASIEST"
 var difficulty_multiplier: float = 1.0
+var difficulty_damage_multiplier: float = 1.0
 
 const DIFFICULTY_TIERS: Array = [
 	{
 		"id": 0,
 		"name": "THE EASIEST",
 		"mult": 1.0,
+		"dmg_mult": 1.0,
 		"tag": "MODUL MELC ADORMIT",
 		"color": Color(0.22, 0.88, 0.55),
-		"quote": "\"Pentru oameni care joacă cu monitorul stins. Inamicii sunt făcuți din carton umed. (HP = HP × 1.0)\""
+		"desc": "Experiență relaxată. Inamici fragili și lovituri blânde, ideal pentru explorare.",
+		"quote": "\"Pentru oameni care joacă cu monitorul stins. Inamicii sunt făcuți din carton umed.\""
 	},
 	{
 		"id": 1,
 		"name": "VERY EASY",
 		"mult": 1.5,
+		"dmg_mult": 1.3,
 		"tag": "ÎNCĂ CU ROȚI AJUTĂTOARE",
 		"color": Color(0.22, 0.78, 0.98),
-		"quote": "\"Tot ușor e, dar măcar am băgat baterii noi în drone și crawlere. (HP = HP × 1.5)\""
+		"desc": "Inamici ceva mai rezistenți și mai agresivi, dar încă foarte abordabili.",
+		"quote": "\"Tot ușor e, dar măcar am băgat baterii noi în drone și crawlere.\""
 	},
 	{
 		"id": 2,
 		"name": "EASY",
 		"mult": 2.3,
+		"dmg_mult": 1.7,
 		"tag": "AI-UL ÎNCEPE SĂ RÂDĂ",
 		"color": Color(0.96, 0.62, 0.08),
-		"quote": "\"Așa numesc eu 'Easy'. Tu probabil o să plângi când ajungi la The Crusher Titan. (HP = HP × 2.3)\""
+		"desc": "Provocare serioasă. Inamicii rezistă mult și lovesc destul de tare.",
+		"quote": "\"Așa numesc eu 'Easy'. Tu probabil o să plângi când ajungi la The Crusher Titan.\""
 	},
 	{
 		"id": 3,
 		"name": "ULTRA EASY (TRUST ME)",
 		"mult": 3.2,
+		"dmg_mult": 2.2,
 		"tag": "100% CORECT, PROMIT :)",
 		"color": Color(0.95, 0.28, 0.32),
-		"quote": "\"Cel mai 'ușor' mod posibil! (Notă: Inamicii sunt tancuri blindate. Sper că îți place baia în acid verde. HP = HP × 3.2)\""
+		"desc": "Brutal și nemilos. Blindaj greu și daune masive la fiecare greșeală.",
+		"quote": "\"Cel mai 'ușor' mod posibil! Inamicii sunt tancuri blindate. Sper că îți place baia în acid verde.\""
 	}
 ]
 
@@ -117,11 +126,28 @@ var secondary_weapon: String:
 
 var active_grenade: String = "frag"
 
+const ITEM_BANDAGE: Dictionary = {
+	"id": "bandage",
+	"name": "Bandage",
+	"type": "consumable",
+	"icon": "bandage_32x32",
+	"heal": 35.0,
+	"count": 1
+}
+
+const GRENADE_DROP_TEMPLATES: Array = [
+	{"id": "frag", "name": "Frag Grenades", "type": "grenade", "icon": "grenade_frag_32x32", "count": 1},
+	{"id": "emp", "name": "EMP Grenades", "type": "grenade", "icon": "grenade_emp_32x32", "count": 1},
+	{"id": "cryo", "name": "Cryo Grenades", "type": "grenade", "icon": "grenade_cryo_32x32", "count": 1},
+	{"id": "fire", "name": "Thermite Grenades", "type": "grenade", "icon": "grenade_fire_32x32", "count": 1}
+]
+
 const REBINDABLE_ACTIONS: Array = [
 	{"action": "attack_melee", "label": "Atac Main Hand (Armă Principală)", "cat": "ARME & SCUT"},
 	{"action": "attack_ranged", "label": "Atac Secondary Hand (Armă Secundară)", "cat": "ARME & SCUT"},
 	{"action": "switch_weapon", "label": "Swap Arme (Main ↔ Secondary)", "cat": "ARME & SCUT"},
 	{"action": "shield", "label": "Activare Scut Energetic Aegis", "cat": "ARME & SCUT"},
+	{"action": "heal", "label": "Folosește Bandaj (Heal HP)", "cat": "ARME & SCUT"},
 	{"action": "grenade", "label": "Aruncă Grenadă (Ține Apăsat Slingshot)", "cat": "GRENADE"},
 	{"action": "cycle_grenade", "label": "Schimbă Tipul Grenadei (Următoarea)", "cat": "GRENADE"},
 	{"action": "grenade_1", "label": "Selectează Frag Grenade", "cat": "GRENADE"},
@@ -147,7 +173,7 @@ func _setup_inputs() -> void:
 		"attack_melee", "attack_ranged", "switch_weapon", "inventory",
 		"ui_cancel", "shield", "grenade", "cycle_grenade",
 		"grenade_1", "grenade_2", "grenade_3", "grenade_4",
-		"grapple", "interact", "dash"
+		"grapple", "interact", "dash", "heal"
 	]
 	for act in all_actions:
 		if InputMap.has_action(act):
@@ -175,6 +201,7 @@ func _setup_inputs() -> void:
 	_add_action("grapple", [KEY_E])
 	_add_action("interact", [KEY_E])
 	_add_action("dash", [KEY_C])
+	_add_action("heal", [KEY_H])
 
 func reset_all_keybinds_to_default() -> void:
 	_setup_inputs()
@@ -304,46 +331,123 @@ func swap_weapons() -> void:
 # -------------------------------------------------------------
 # WORLD DROP & PICKUP SYSTEM
 # -------------------------------------------------------------
-func drop_item_in_world(item: Dictionary, pos: Vector2, facing: int) -> void:
+func spawn_world_drop(item: Dictionary, world_pos: Vector2, launch_vel: Vector2 = Vector2.ZERO, pickup_delay: float = 0.25) -> void:
 	if item.is_empty():
 		return
 	var scene = load("res://scenes/dropped_item.tscn")
 	if scene:
 		var inst = scene.instantiate()
 		inst.item_data = item.duplicate()
-		inst.global_position = Vector2(pos.x + facing * 32.0, pos.y - 12.0)
+		inst.position = world_pos
+		inst.drop_velocity = launch_vel
+		inst.pickup_cooldown = pickup_delay
 		var current_scene = get_tree().current_scene
 		if current_scene:
-			current_scene.add_child(inst)
+			current_scene.call_deferred("add_child", inst)
 			print("Dropped item into world:", item.get("name", "Unknown"))
+
+func drop_item_in_world(item: Dictionary, pos: Vector2, facing: int) -> void:
+	spawn_world_drop(item, Vector2(pos.x + facing * 32.0, pos.y - 12.0), Vector2(facing * 45.0, -90.0), 0.45)
+
+func spawn_mob_loot(world_pos: Vector2, drop_chance: float = 0.85, guaranteed_drops: int = 0) -> void:
+	var drops_to_spawn: Array[Dictionary] = []
+
+	if guaranteed_drops > 0:
+		drops_to_spawn.append(ITEM_BANDAGE.duplicate())
+		for i in range(1, guaranteed_drops):
+			if i % 2 == 1:
+				var g_tmpl: Dictionary = GRENADE_DROP_TEMPLATES[randi() % GRENADE_DROP_TEMPLATES.size()]
+				drops_to_spawn.append(g_tmpl.duplicate())
+			else:
+				drops_to_spawn.append(ITEM_BANDAGE.duplicate())
+	else:
+		if randf() > drop_chance:
+			return
+		var bandage_bias: float = 0.65 if player_hp < player_max_hp * 0.65 else 0.5
+		var first_is_bandage: bool = randf() < bandage_bias
+		if first_is_bandage:
+			drops_to_spawn.append(ITEM_BANDAGE.duplicate())
+		else:
+			var g_tmpl: Dictionary = GRENADE_DROP_TEMPLATES[randi() % GRENADE_DROP_TEMPLATES.size()]
+			drops_to_spawn.append(g_tmpl.duplicate())
+
+		if randf() < 0.25:
+			if first_is_bandage:
+				var bonus_g: Dictionary = GRENADE_DROP_TEMPLATES[randi() % GRENADE_DROP_TEMPLATES.size()]
+				drops_to_spawn.append(bonus_g.duplicate())
+			else:
+				drops_to_spawn.append(ITEM_BANDAGE.duplicate())
+
+	for drop_item in drops_to_spawn:
+		var offset := Vector2(randf_range(-10.0, 10.0), -10.0)
+		var vel := Vector2(randf_range(-70.0, 70.0), randf_range(-190.0, -130.0))
+		spawn_world_drop(drop_item, world_pos + offset, vel, 0.3)
 
 func pickup_item(item: Dictionary) -> bool:
 	if item.is_empty():
 		return false
 
-	# 1. If Main Hand empty, put in Main Hand
+	var item_type: String = item.get("type", "")
+	var item_id: String = item.get("id", "")
+	var add_count: int = int(item.get("count", 1))
+
+	if item_type == "grenade" or item_type == "consumable":
+		# 1. Stack onto existing slot in backpack, main_hand, or secondary_hand
+		for slot in backpack:
+			if slot.get("id", "") == item_id:
+				slot["count"] = int(slot.get("count", 1)) + add_count
+				inventory_updated.emit()
+				return true
+		if main_hand.get("id", "") == item_id:
+			main_hand["count"] = int(main_hand.get("count", 1)) + add_count
+			inventory_updated.emit()
+			return true
+		if secondary_hand.get("id", "") == item_id:
+			secondary_hand["count"] = int(secondary_hand.get("count", 1)) + add_count
+			inventory_updated.emit()
+			return true
+
+		# 2. Place into first empty slot in 3x3 Backpack
+		for i in range(backpack.size()):
+			if backpack[i].is_empty():
+				backpack[i] = item.duplicate()
+				inventory_updated.emit()
+				return true
+
+		# 3. If backpack is full and it's a bandage while hurt, apply heal directly
+		if item_id == "bandage" and player_hp < player_max_hp:
+			var heal_amt := float(item.get("heal", 35.0)) * float(add_count)
+			player_hp = min(player_max_hp, player_hp + heal_amt)
+			player_health_changed.emit(player_hp, player_max_hp)
+			return true
+
+		# 4. Fallback to empty Secondary Hand, then Main Hand
+		if secondary_hand.is_empty():
+			secondary_hand = item.duplicate()
+			inventory_updated.emit()
+			weapon_swapped.emit(primary_weapon, secondary_weapon)
+			return true
+		if main_hand.is_empty():
+			main_hand = item.duplicate()
+			inventory_updated.emit()
+			weapon_swapped.emit(primary_weapon, secondary_weapon)
+			return true
+
+		return false
+
+	# Non-stackable weapons / modules: Main Hand -> Secondary Hand -> Backpack
 	if main_hand.is_empty():
 		main_hand = item.duplicate()
 		inventory_updated.emit()
 		weapon_swapped.emit(primary_weapon, secondary_weapon)
 		return true
 
-	# 2. If Secondary Hand empty, put in Secondary Hand
 	if secondary_hand.is_empty():
 		secondary_hand = item.duplicate()
 		inventory_updated.emit()
 		weapon_swapped.emit(primary_weapon, secondary_weapon)
 		return true
 
-	# 3. If stackable grenade and already in backpack, add count
-	if item.get("type", "") == "grenade":
-		for slot in backpack:
-			if slot.get("id", "") == item.get("id", ""):
-				slot["count"] = slot.get("count", 1) + item.get("count", 1)
-				inventory_updated.emit()
-				return true
-
-	# 4. Find first empty slot in 3x3 Backpack
 	for i in range(backpack.size()):
 		if backpack[i].is_empty():
 			backpack[i] = item.duplicate()
@@ -351,6 +455,57 @@ func pickup_item(item: Dictionary) -> bool:
 			return true
 
 	# Inventory is completely full!
+	return false
+
+func get_bandage_count() -> int:
+	var total: int = 0
+	if main_hand.get("id", "") == "bandage":
+		total += int(main_hand.get("count", 1))
+	if secondary_hand.get("id", "") == "bandage":
+		total += int(secondary_hand.get("count", 1))
+	for slot in backpack:
+		if slot.get("id", "") == "bandage":
+			total += int(slot.get("count", 1))
+	return total
+
+func use_bandage() -> bool:
+	if player_hp >= player_max_hp:
+		return false
+
+	for slot in backpack:
+		if slot.get("id", "") == "bandage" and int(slot.get("count", 0)) > 0:
+			var heal_amt := float(slot.get("heal", 35.0))
+			player_hp = min(player_max_hp, player_hp + heal_amt)
+			slot["count"] = int(slot.get("count", 1)) - 1
+			if slot["count"] <= 0:
+				slot.clear()
+			player_health_changed.emit(player_hp, player_max_hp)
+			inventory_updated.emit()
+			weapon_swapped.emit(primary_weapon, secondary_weapon)
+			return true
+
+	if secondary_hand.get("id", "") == "bandage" and int(secondary_hand.get("count", 0)) > 0:
+		var heal_amt := float(secondary_hand.get("heal", 35.0))
+		player_hp = min(player_max_hp, player_hp + heal_amt)
+		secondary_hand["count"] = int(secondary_hand.get("count", 1)) - 1
+		if secondary_hand["count"] <= 0:
+			secondary_hand.clear()
+		player_health_changed.emit(player_hp, player_max_hp)
+		inventory_updated.emit()
+		weapon_swapped.emit(primary_weapon, secondary_weapon)
+		return true
+
+	if main_hand.get("id", "") == "bandage" and int(main_hand.get("count", 0)) > 0:
+		var heal_amt := float(main_hand.get("heal", 35.0))
+		player_hp = min(player_max_hp, player_hp + heal_amt)
+		main_hand["count"] = int(main_hand.get("count", 1)) - 1
+		if main_hand["count"] <= 0:
+			main_hand.clear()
+		player_health_changed.emit(player_hp, player_max_hp)
+		inventory_updated.emit()
+		weapon_swapped.emit(primary_weapon, secondary_weapon)
+		return true
+
 	return false
 
 func set_active_grenade(g_id: String) -> void:
@@ -493,6 +648,9 @@ func reset_run_state() -> void:
 	player_shield_changed.emit(player_shield, player_max_shield)
 	inventory_updated.emit()
 
+func get_scaled_enemy_damage(base_damage: float) -> float:
+	return base_damage * difficulty_damage_multiplier
+
 func apply_difficulty_and_reset_level(tier_idx: int) -> void:
 	if tier_idx < 0 or tier_idx >= DIFFICULTY_TIERS.size():
 		return
@@ -500,6 +658,7 @@ func apply_difficulty_and_reset_level(tier_idx: int) -> void:
 	difficulty_index = tier_idx
 	difficulty_name = tier["name"]
 	difficulty_multiplier = float(tier["mult"])
+	difficulty_damage_multiplier = float(tier.get("dmg_mult", tier["mult"]))
 	reset_run_state()
 	difficulty_changed.emit(difficulty_name, difficulty_multiplier)
 	get_tree().paused = false

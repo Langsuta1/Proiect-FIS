@@ -63,8 +63,14 @@ func _on_gui_input(event: InputEvent) -> void:
 			if hud and hud.has_method("_on_slot_ui_clicked"):
 				hud._on_slot_ui_clicked(slot_type, slot_index)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			if item_data.get("type", "") == "consumable":
+				var player = get_tree().get_first_node_in_group("player")
+				if player and player.has_method("_try_use_bandage"):
+					player._try_use_bandage()
+				else:
+					GameManager.use_bandage()
 			# Quick equip into Main Hand!
-			if slot_type == "backpack" and not item_data.is_empty():
+			elif slot_type == "backpack" and not item_data.is_empty():
 				GameManager.swap_slots("backpack", slot_index, "main", 0)
 
 # DRAG & DROP IMPLEMENTATION

@@ -11,6 +11,7 @@ extends CanvasLayer
 @onready var weapon_primary_lbl: Label = $WeaponCard/VBox/PrimaryLbl
 @onready var weapon_secondary_lbl: Label = $WeaponCard/VBox/SecondaryLbl
 @onready var grenade_lbl: Label = $WeaponCard/VBox/GrenadeLbl
+@onready var bandage_lbl: Label = get_node_or_null("WeaponCard/VBox/BandageLbl")
 
 @onready var boss_panel: Panel = $BossPanel
 @onready var boss_bar: ProgressBar = $BossPanel/BossBar
@@ -157,6 +158,10 @@ func _update_hud_display() -> void:
 		var g_key = GameManager.get_action_binding_text("grenade")
 		var c_key = GameManager.get_action_binding_text("cycle_grenade")
 		grenade_lbl.text = "GRENADE [" + g_key + " / " + c_key + "]: " + GameManager.active_grenade.to_upper() + " (x" + str(g_cnt) + ")"
+	if bandage_lbl:
+		var b_cnt = GameManager.get_bandage_count()
+		var h_key = GameManager.get_action_binding_text("heal")
+		bandage_lbl.text = "BANDAGE [" + h_key + "]: x" + str(b_cnt)
 
 func _on_hp_changed(_hp: float, _mx: float) -> void: _update_hud_display()
 func _on_ep_changed(_ep: float, _mx: float) -> void: _update_hud_display()

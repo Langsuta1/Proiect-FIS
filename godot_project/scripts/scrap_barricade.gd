@@ -2,6 +2,7 @@ extends StaticBody2D
 # scrap_barricade.gd - Destructible scrap barricade blocking tutorial progression
 
 @export var max_hp: float = 45.0
+@export var climbable: bool = false
 var hp: float = 45.0
 var is_destroyed: bool = false
 
@@ -10,6 +11,7 @@ var is_destroyed: bool = false
 @onready var hurtbox: Area2D = $Hurtbox
 
 func _ready() -> void:
+	set_meta("climbable", climbable)
 	max_hp = max_hp * GameManager.difficulty_multiplier
 	hp = max_hp
 	if hurtbox:

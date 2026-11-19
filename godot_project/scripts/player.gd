@@ -60,6 +60,7 @@ var emp_timer: float = 0.0
 var burn_timer: float = 0.0
 var burn_tick_timer: float = 0.0
 var blast_stun_timer: float = 0.0
+var heal_flash_timer: float = 0.0
 var camera_shake_timer: float = 0.0
 var camera_shake_intensity: float = 0.0
 
@@ -158,6 +159,9 @@ func _physics_process(dt: float) -> void:
 	if emp_timer > 0.0:
 		emp_timer -= dt
 		queue_redraw()
+	if heal_flash_timer > 0.0:
+		heal_flash_timer -= dt
+		queue_redraw()
 
 	# Thermite / Fire Burning DoT
 	if burn_timer > 0.0:
@@ -212,6 +216,8 @@ func _physics_process(dt: float) -> void:
 		GameManager.set_active_grenade("cryo")
 	elif Input.is_action_just_pressed("grenade_4"):
 		GameManager.set_active_grenade("fire")
+	if Input.is_action_just_pressed("heal"):
+		_try_use_bandage()
 
 	# 3. Handle [E] (Pick Up nearby dropped item or Grappling Hook)
 	if Input.is_action_just_pressed("interact"):
@@ -327,25 +333,31 @@ func _physics_process(dt: float) -> void:
 		can_double_jump = true
 		has_double_jumped = false
 
-	# Detect Wall Slide
-	var on_wall = is_on_wall() and not is_on_floor()
-	var wall_normal = get_wall_normal()
-	var wall_dir = 0
-	if wall_normal.x > 0.5:
-		wall_dir = -1
-	elif wall_normal.x < -0.5:
-		wall_dir = 1
+	# Detect Wall Slide (ONLY on walls tagged climbable = true!)
+	var on_climbable_wall: bool = false
+	var wall_dir: int = 0
+	if is_on_wall() and not is_on_floor():
+		for i in range(get_slide_collision_count()):
+			var col: KinematicCollision2D = get_slide_collision(i)
+			var n: Vector2 = col.get_normal()
+			if abs(n.x) > 0.5 and _is_collider_climbable(col.get_collider()):
+				on_climbable_wall = true
+				wall_dir = -1 if n.x > 0.5 else 1
+				break
 
 	var input_dir: float = Input.get_axis("move_left", "move_right")
-	var pushing_wall = (input_dir != 0.0 and sign(input_dir) == wall_dir)
+	var pushing_wall: bool = (on_climbable_wall and input_dir != 0.0 and signf(input_dir) == float(wall_dir))
 
-	if on_wall and pushing_wall and velocity.y > 0.0 and not is_crouching and not is_dashing and not is_grappling:
-		is_wall_sliding = true
+	if on_climbable_wall and pushing_wall and not is_crouching and not is_dashing and not is_grappling:
 		wall_direction = wall_dir
 		wall_coyote_timer = 0.12
-		velocity.y = min(velocity.y, wall_slide_speed)
-		can_double_jump = true
-		has_double_jumped = false
+		if velocity.y > 0.0:
+			is_wall_sliding = true
+			velocity.y = min(velocity.y, wall_slide_speed)
+			can_double_jump = true
+			has_double_jumped = false
+		else:
+			is_wall_sliding = false
 	else:
 		is_wall_sliding = false
 
@@ -500,6 +512,8 @@ func _handle_attacks(dt: float) -> void:
 			melee_hitbox.position = Vector2((30 if is_bat else 24) * facing_direction, hit_y)
 		elif weapon_type == "ranged":
 			_fire_ranged(weapon_id)
+		elif weapon_type == "consumable":
+			_try_use_bandage()
 		elif sec_type == "ranged":
 			_fire_ranged(sec_id)
 
@@ -507,6 +521,8 @@ func _handle_attacks(dt: float) -> void:
 	elif Input.is_action_just_pressed("attack_ranged"):
 		if sec_type == "ranged":
 			_fire_ranged(sec_id)
+		elif sec_type == "consumable":
+			_try_use_bandage()
 		elif sec_type == "melee":
 			current_attack_type = "melee"
 			var is_bat = (sec_id == "bat")
@@ -719,6 +735,33 @@ func _draw() -> void:
 				base + Vector2(2.0, 0),
 				base + (tip - base) * 0.6
 			]), Color(1.0, 0.92, 0.3, 0.9))
+
+	# 4. Bandage Heal Feedback (+35 HP & Emerald Pulse)
+	if heal_flash_timer > 0.0:
+		var progress: float = 1.0 - clamp(heal_flash_timer / 0.85, 0.0, 1.0)
+		var alpha: float = clamp(1.0 - progress, 0.0, 1.0)
+		draw_arc(Vector2.ZERO, 16.0 + progress * 14.0, 0.0, TAU, 24, Color(0.25, 0.96, 0.55, alpha * 0.85), 2.0)
+		var font: Font = ThemeDB.fallback_font
+		if font:
+			var txt_pos: Vector2 = Vector2(-18.0, -24.0 - progress * 22.0)
+			draw_string(font, txt_pos, "+35 HP", HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color(0.3, 1.0, 0.58, alpha))
+
+func _is_collider_climbable(collider: Object) -> bool:
+	if collider == null:
+		return false
+	if "climbable" in collider:
+		return bool(collider.get("climbable"))
+	if collider.has_meta("climbable"):
+		return bool(collider.get_meta("climbable"))
+	if collider is Node:
+		var node: Node = collider as Node
+		return node.is_in_group("climbable_walls") or node.is_in_group("climbable")
+	return false
+
+func _try_use_bandage() -> void:
+	if GameManager.use_bandage():
+		heal_flash_timer = 0.85
+		queue_redraw()
 
 func _find_closest_grapple_ring(exclude_current: bool = false) -> Node2D:
 	var rings = get_tree().get_nodes_in_group("grapple_rings")
@@ -1075,5 +1118,3 @@ func _trigger_air_jump_effect() -> void:
 	if tw:
 		tw.tween_property(self, "sprite_scale_mod", Vector2(0.85, 1.25), 0.06).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 		tw.tween_property(self, "sprite_scale_mod", Vector2(1.0, 1.0), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
-
-

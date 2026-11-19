@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3 uid="uid://level_heap_v9_conduit_fixed"]
+[gd_scene load_steps=21 format=3 uid="uid://level_heap_v9_conduit_fixed"]
 
 [ext_resource type="Texture2D" path="res://assets/level_heap_backdrop_5200x900.png" id="1_backdrop"]
 [ext_resource type="Texture2D" path="res://assets/crushed_car_obstacle.png" id="2_car_tex"]
@@ -13,6 +13,7 @@
 [ext_resource type="Script" path="res://scripts/hazard_acid_pit.gd" id="11_acid"]
 [ext_resource type="Texture2D" path="res://assets/overhead_girder_beam.png" id="12_girder"]
 [ext_resource type="PackedScene" path="res://scenes/scrap_barricade.tscn" id="13_barricade"]
+[ext_resource type="Script" path="res://scripts/climbable_wall.gd" id="14_climbwall"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor1"]
 size = Vector2(2800, 40)
@@ -41,6 +42,9 @@ texture = ExtResource("1_backdrop")
 
 [node name="StaticGeometry" type="StaticBody2D" parent="."]
 collision_mask = 0
+script = ExtResource("14_climbwall")
+climbable = false
+metadata/climbable = false
 
 [node name="Floor1" type="CollisionShape2D" parent="StaticGeometry"]
 position = Vector2(1400, 800)
@@ -54,6 +58,9 @@ shape = SubResource("RectangleShape2D_floor2")
 position = Vector2(320, 768)
 collision_layer = 1
 collision_mask = 0
+script = ExtResource("14_climbwall")
+climbable = false
+metadata/climbable = false
 
 [node name="Sprite2D" type="Sprite2D" parent="CrushedCarObstacle"]
 texture = ExtResource("2_car_tex")
@@ -65,6 +72,9 @@ shape = SubResource("RectangleShape2D_car")
 position = Vector2(860, 760)
 collision_layer = 1
 collision_mask = 0
+script = ExtResource("14_climbwall")
+climbable = false
+metadata/climbable = false
 
 [node name="Sprite2D" type="Sprite2D" parent="ScrapConduitTunnel"]
 position = Vector2(0, -180)
@@ -78,6 +88,9 @@ shape = SubResource("RectangleShape2D_conduit_roof")
 position = Vector2(1380, 440)
 collision_layer = 1
 collision_mask = 0
+script = ExtResource("14_climbwall")
+climbable = true
+metadata/climbable = true
 
 [node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam"]
 texture = ExtResource("12_girder")
@@ -89,6 +102,9 @@ shape = SubResource("RectangleShape2D_girder")
 position = Vector2(1460, 440)
 collision_layer = 1
 collision_mask = 0
+script = ExtResource("14_climbwall")
+climbable = true
+metadata/climbable = true
 
 [node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam2"]
 texture = ExtResource("12_girder")
@@ -166,7 +182,7 @@ detection_radius = 160.0
 [node name="TutorialWallJump" parent="." instance=ExtResource("8_tut")]
 position = Vector2(1420, 715)
 tutorial_title = "WALL SLIDE & JUMP"
-tutorial_desc = "Hold [A] / [D] into wall to slide\nPress [SPACE] to Wall Jump!"
+tutorial_desc = "Hold [A] / [D] on hazard-striped walls\nPress [SPACE] to Wall Jump!"
 detection_radius = 160.0
 
 [node name="TutorialSafeCombat" parent="." instance=ExtResource("8_tut")]
