@@ -10,6 +10,9 @@ class_name Player
 @export var dash_speed: float = 420.0
 @export var dash_duration: float = 0.22
 @export var gravity: float = 980.0
+@export var wall_slide_speed: float = 75.0
+@export var wall_jump_h_force: float = 270.0
+@export var wall_jump_v_velocity: float = -370.0
 
 # Strict I-Frames
 var i_frame_timer: float = 0.0
@@ -21,24 +24,44 @@ var is_crouching: bool = false
 var is_dashing: bool = false
 var dash_timer: float = 0.0
 var dash_cooldown: float = 0.0
+var dash_ghost_timer: float = 0.0
+const DASH_GHOST_INTERVAL: float = 0.038
 var can_double_jump: bool = true
 var has_double_jumped: bool = false
+var is_wall_sliding: bool = false
+var wall_direction: int = 0
+var wall_jump_lock_timer: float = 0.0
+var wall_coyote_timer: float = 0.0
 
 # Energy Shield
 var is_shield_raised: bool = false
 
-# Grappling Hook
+# Grappling Hook (True Cartesian Velocity-Projection Pendulum - Zero Teleportation)
 var is_grappling: bool = false
 var grapple_anchor: Vector2 = Vector2.ZERO
 var grapple_length: float = 0.0
 var grapple_angle: float = 0.0
 var grapple_angular_vel: float = 0.0
-const GRAPPLE_RANGE: float = 290.0
+var current_grapple_ring: Node2D = null
+var closest_available_ring: Node2D = null
+const GRAPPLE_RANGE: float = 330.0
+const GRAPPLE_IDEAL_MAX_LEN: float = 185.0
+const GRAPPLE_MIN_LEN: float = 75.0
 
 # Grenade Slingshot Aiming
 var is_aiming_grenade: bool = false
 var grenade_launch_velocity: Vector2 = Vector2.ZERO
 var grenade_trajectory_points: Array[Vector2] = []
+
+# Grenade Status Effects on Player (Cryo Freeze, EMP Overload, Fire Burn, Frag Blast)
+var freeze_timer: float = 0.0
+var chill_timer: float = 0.0
+var emp_timer: float = 0.0
+var burn_timer: float = 0.0
+var burn_tick_timer: float = 0.0
+var blast_stun_timer: float = 0.0
+var camera_shake_timer: float = 0.0
+var camera_shake_intensity: float = 0.0
 
 # Checkpoints & Respawn
 var respawn_position: Vector2 = Vector2(80, 750)
@@ -58,6 +81,11 @@ var flame_tick_timer: float = 0.0
 @onready var shield_sprite: Sprite2D = $ShieldSprite
 @onready var melee_hitbox: Area2D = $MeleeHitbox
 @onready var collision_shape: CollisionShape2D = $CollisionShape2D
+@onready var dash_particles: CPUParticles2D = get_node_or_null("DashParticles")
+@onready var cam: Camera2D = get_node_or_null("Camera2D")
+
+const DashGhostClass = preload("res://scripts/dash_ghost.gd")
+const AirJumpEffectScene = preload("res://scenes/air_jump_effect.tscn")
 
 # Humanoid Textures
 var tex_standard_walk = preload("res://assets/robot_standard_walk_strip8.png")
@@ -73,8 +101,11 @@ var tex_damaged_attack_bat = preload("res://assets/robot_damaged_attack_bat_stri
 var tex_standard_shoot = preload("res://assets/robot_standard_shoot_strip4.png")
 var tex_damaged_shoot = preload("res://assets/robot_damaged_shoot_strip4.png")
 var tex_shield = preload("res://assets/shield_energy_barrier_64x64.png")
+var tex_jump = preload("res://assets/robot_jump_strip3.png")
+var tex_dash = preload("res://assets/robot_dash_strip2.png")
 
 var anim_timer: float = 0.0
+var sprite_scale_mod: Vector2 = Vector2.ONE
 
 func _ready() -> void:
 	add_to_group("player")
@@ -102,16 +133,85 @@ func _physics_process(dt: float) -> void:
 		die_in_hazard("void")
 		return
 
-	# 1. Update I-Frames
+	# 0. Camera Shake & Closest Grapple Ring Detection
+	if camera_shake_timer > 0.0:
+		camera_shake_timer -= dt
+		if cam:
+			cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * camera_shake_intensity * clamp(camera_shake_timer * 4.0, 0.0, 1.0)
+	elif cam and cam.offset != Vector2.ZERO:
+		cam.offset = Vector2.ZERO
+
+	closest_available_ring = _find_closest_grapple_ring(is_grappling)
+
+	# 1. Update I-Frames, Movement Timers & Grenade Status Effects
 	if i_frame_timer > 0.0:
 		i_frame_timer -= dt
-		sprite.modulate.a = 0.35 if fmod(Time.get_ticks_msec() / 70.0, 2.0) > 1.0 else 1.0
-	else:
-		sprite.modulate.a = 1.0
 
-	# 2. Quick-Swap Weapons [Q]
+	if wall_jump_lock_timer > 0.0:
+		wall_jump_lock_timer -= dt
+	if wall_coyote_timer > 0.0:
+		wall_coyote_timer -= dt
+	if blast_stun_timer > 0.0:
+		blast_stun_timer -= dt
+	if chill_timer > 0.0:
+		chill_timer -= dt
+	if emp_timer > 0.0:
+		emp_timer -= dt
+		queue_redraw()
+
+	# Thermite / Fire Burning DoT
+	if burn_timer > 0.0:
+		burn_timer -= dt
+		burn_tick_timer += dt
+		if burn_tick_timer >= 0.5:
+			burn_tick_timer = 0.0
+			take_grenade_damage(5.0)
+		queue_redraw()
+
+	# Sprite tinting for Status Effects & I-Frames
+	var base_tint = Color(1.0, 1.0, 1.0, 1.0)
+	if freeze_timer > 0.0:
+		base_tint = Color(0.35, 0.92, 1.65, 1.0)
+	elif chill_timer > 0.0:
+		base_tint = Color(0.55, 0.9, 1.35, 1.0)
+	elif emp_timer > 0.0:
+		base_tint = Color(0.5, 0.9, 1.5, 1.0) if fmod(Time.get_ticks_msec() / 45.0, 2.0) > 1.0 else Color(1.1, 1.1, 0.5, 1.0)
+	elif burn_timer > 0.0:
+		base_tint = Color(1.4, 0.65, 0.35, 1.0)
+	if i_frame_timer > 0.0 and freeze_timer <= 0.0:
+		base_tint.a = 0.35 if fmod(Time.get_ticks_msec() / 70.0, 2.0) > 1.0 else 1.0
+	sprite.modulate = base_tint
+
+	# CRYO FREEZE SOLID LOCK: While frozen in an ice block, player is immobilized!
+	if freeze_timer > 0.0:
+		freeze_timer -= dt
+		if is_grappling:
+			_release_grapple()
+		is_dashing = false
+		is_firing_flamethrower = false
+		is_aiming_grenade = false
+		if shield_sprite:
+			shield_sprite.visible = false
+		if not is_on_floor():
+			velocity.y += gravity * dt
+		velocity.x = move_toward(velocity.x, 0.0, 900.0 * dt)
+		move_and_slide()
+		queue_redraw()
+		return
+
+	# 2. Quick-Swap Weapons [Q] & Grenade Type Selection [T / 1-4]
 	if Input.is_action_just_pressed("switch_weapon"):
 		GameManager.swap_weapons()
+	if Input.is_action_just_pressed("cycle_grenade"):
+		GameManager.cycle_active_grenade()
+	elif Input.is_action_just_pressed("grenade_1"):
+		GameManager.set_active_grenade("frag")
+	elif Input.is_action_just_pressed("grenade_2"):
+		GameManager.set_active_grenade("emp")
+	elif Input.is_action_just_pressed("grenade_3"):
+		GameManager.set_active_grenade("cryo")
+	elif Input.is_action_just_pressed("grenade_4"):
+		GameManager.set_active_grenade("fire")
 
 	# 3. Handle [E] (Pick Up nearby dropped item or Grappling Hook)
 	if Input.is_action_just_pressed("interact"):
@@ -124,17 +224,8 @@ func _physics_process(dt: float) -> void:
 				break
 		if not picked:
 			if is_grappling:
-				# Check if there is another ring in range to chain-swing!
-				var rings = get_tree().get_nodes_in_group("grapple_rings")
-				var has_next_ring = false
-				for ring in rings:
-					if ring.global_position.distance_to(grapple_anchor) > 15.0 and global_position.distance_to(ring.global_position) <= GRAPPLE_RANGE:
-						has_next_ring = true
-						break
-				if has_next_ring:
-					_try_grapple()
-				else:
-					_release_grapple()
+				# Pressing [E] while grappling cleanly releases the hook!
+				_release_grapple()
 			else:
 				_try_grapple()
 
@@ -143,29 +234,58 @@ func _physics_process(dt: float) -> void:
 		move_and_slide()
 		return
 
-	# 4. Energy Shield [F] / [Right Click]
-	is_shield_raised = Input.is_action_pressed("shield") and GameManager.player_shield > 0.0
+	# 4. Energy Shield [F] / [Right Click] (Disabled during EMP malfunction!)
+	is_shield_raised = Input.is_action_pressed("shield") and GameManager.player_shield > 0.0 and emp_timer <= 0.0
 	if shield_sprite:
 		shield_sprite.visible = is_shield_raised
 		shield_sprite.position = Vector2(16 * facing_direction, 0)
 		shield_sprite.scale.x = facing_direction
 
-	# 5. Handle Dash [C]
+	# 5. Handle Dash [C] (Disabled during EMP malfunction!)
 	if dash_cooldown > 0.0:
 		dash_cooldown -= dt
 	if is_dashing:
 		dash_timer -= dt
 		velocity.y = 0.0
 		velocity.x = dash_speed * facing_direction
+
+		# Dynamic Dash Animation & Orientation
+		sprite.texture = tex_dash
+		sprite.hframes = 2
+		sprite.frame = 1 if dash_timer < (dash_duration * 0.5) else 0
+		sprite.scale.x = facing_direction
+		sprite.offset = Vector2(0, 0)
+
+		# Spawn ghost trail while dashing
+		dash_ghost_timer -= dt
+		if dash_ghost_timer <= 0.0:
+			dash_ghost_timer = DASH_GHOST_INTERVAL
+			_spawn_dash_ghost()
+
 		if dash_timer <= 0.0:
 			is_dashing = false
 			dash_cooldown = 0.45
+			if dash_particles:
+				dash_particles.emitting = false
 		move_and_slide()
 		return
 
-	if Input.is_action_just_pressed("dash") and dash_cooldown <= 0.0 and not is_dashing and GameManager.consume_ep(15.0):
+	if Input.is_action_just_pressed("dash") and dash_cooldown <= 0.0 and not is_dashing and emp_timer <= 0.0 and GameManager.consume_ep(15.0):
 		is_dashing = true
 		dash_timer = dash_duration
+		dash_ghost_timer = DASH_GHOST_INTERVAL
+
+		sprite.texture = tex_dash
+		sprite.hframes = 2
+		sprite.frame = 0
+		sprite.scale.x = facing_direction
+		sprite.offset = Vector2(0, 0)
+
+		if dash_particles:
+			dash_particles.direction = Vector2(-facing_direction, 0)
+			dash_particles.emitting = true
+
+		_spawn_dash_ghost()
 		return
 
 	# 6. Handle Crouch [S] / [DOWN] with Low Ceiling Lock
@@ -200,39 +320,84 @@ func _physics_process(dt: float) -> void:
 				rect.size = Vector2(18, 28)
 				collision_shape.position = Vector2(0, 0)
 
-	# 7. Gravity
+	# 7. Gravity & Wall Slide Friction
 	if not is_on_floor():
 		velocity.y += gravity * dt
 	else:
 		can_double_jump = true
 		has_double_jumped = false
 
-	# 8. Jump & Double Jump
+	# Detect Wall Slide
+	var on_wall = is_on_wall() and not is_on_floor()
+	var wall_normal = get_wall_normal()
+	var wall_dir = 0
+	if wall_normal.x > 0.5:
+		wall_dir = -1
+	elif wall_normal.x < -0.5:
+		wall_dir = 1
+
+	var input_dir: float = Input.get_axis("move_left", "move_right")
+	var pushing_wall = (input_dir != 0.0 and sign(input_dir) == wall_dir)
+
+	if on_wall and pushing_wall and velocity.y > 0.0 and not is_crouching and not is_dashing and not is_grappling:
+		is_wall_sliding = true
+		wall_direction = wall_dir
+		wall_coyote_timer = 0.12
+		velocity.y = min(velocity.y, wall_slide_speed)
+		can_double_jump = true
+		has_double_jumped = false
+	else:
+		is_wall_sliding = false
+
+	# 8. Jump, Wall Jump & Double Jump
+	var speed_debuff_mult: float = 1.0
+	if chill_timer > 0.0:
+		speed_debuff_mult *= 0.55
+	if emp_timer > 0.0:
+		speed_debuff_mult *= 0.7
+
 	if Input.is_action_just_pressed("jump"):
-		if is_on_floor():
+		if (is_wall_sliding or wall_coyote_timer > 0.0) and not is_on_floor():
+			# Wall Jump (Free, launches diagonally away from wall and up)
+			velocity.x = -wall_direction * wall_jump_h_force
+			velocity.y = wall_jump_v_velocity
+			facing_direction = -wall_direction
+			sprite.scale.x = facing_direction
+			wall_jump_lock_timer = 0.16
+			is_wall_sliding = false
+			wall_coyote_timer = 0.0
+			can_double_jump = true
+			has_double_jumped = false
+		elif is_on_floor():
 			# Can only jump if not stuck under a low ceiling!
 			if can_stand:
-				velocity.y = jump_velocity
-		elif can_double_jump and not has_double_jumped and GameManager.consume_ep(10.0):
+				velocity.y = jump_velocity * (0.82 if chill_timer > 0.0 else 1.0)
+		elif can_double_jump and not has_double_jumped and emp_timer <= 0.0 and GameManager.consume_ep(10.0):
 			velocity.y = double_jump_velocity
 			has_double_jumped = true
+			_trigger_air_jump_effect()
 
 	# 9. Horizontal Movement
-	var input_dir: float = Input.get_axis("move_left", "move_right")
-	is_sprinting = Input.is_action_pressed("sprint") and input_dir != 0.0 and not is_crouching
-
-	var target_speed = walk_speed
-	if is_crouching:
-		target_speed = crouch_speed
-	elif is_sprinting:
-		target_speed = sprint_speed
-
-	if input_dir != 0.0:
-		velocity.x = input_dir * target_speed
-		facing_direction = 1 if input_dir > 0 else -1
-		sprite.scale.x = facing_direction
+	if blast_stun_timer > 0.0:
+		velocity.x = move_toward(velocity.x, input_dir * walk_speed, 320.0 * dt)
+	elif wall_jump_lock_timer > 0.0:
+		velocity.x = move_toward(velocity.x, input_dir * walk_speed, 600.0 * dt)
 	else:
-		velocity.x = move_toward(velocity.x, 0.0, 800.0 * dt)
+		is_sprinting = Input.is_action_pressed("sprint") and input_dir != 0.0 and not is_crouching and chill_timer <= 0.0
+
+		var target_speed = walk_speed
+		if is_crouching:
+			target_speed = crouch_speed
+		elif is_sprinting:
+			target_speed = sprint_speed
+		target_speed *= speed_debuff_mult
+
+		if input_dir != 0.0:
+			velocity.x = input_dir * target_speed
+			facing_direction = 1 if input_dir > 0 else -1
+			sprite.scale.x = facing_direction
+		else:
+			velocity.x = move_toward(velocity.x, 0.0, 800.0 * dt)
 
 	# 10. Combat Attacks (Distinct Melee and Ranged handling)
 	_handle_attacks(dt)
@@ -258,12 +423,19 @@ func _handle_attacks(dt: float) -> void:
 	var firing_flame_main = (weapon_id == "flamethrower" and Input.is_action_pressed("attack_melee"))
 	var firing_flame_sec = (sec_id == "flamethrower" and Input.is_action_pressed("attack_ranged"))
 
-	if (firing_flame_main or firing_flame_sec) and GameManager.player_ep > 0.0:
+	if (firing_flame_main or firing_flame_sec) and GameManager.player_ep > 0.0 and emp_timer <= 0.0:
 		is_firing_flamethrower = true
 		GameManager.pause_ep_regen(1.0) # Stamina regen paused while firing!
 		var drain = 28.0 * dt
 		GameManager.player_ep = max(0.0, GameManager.player_ep - drain)
 		GameManager.player_energy_changed.emit(GameManager.player_ep, GameManager.player_max_ep)
+
+		var mouse_pos = get_global_mouse_position()
+		if mouse_pos.x < global_position.x - 4.0:
+			facing_direction = -1
+		elif mouse_pos.x > global_position.x + 4.0:
+			facing_direction = 1
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 
 		sprite.texture = tex_damaged_shoot if is_dmg else tex_standard_shoot
 		sprite.hframes = 4
@@ -328,6 +500,8 @@ func _handle_attacks(dt: float) -> void:
 			melee_hitbox.position = Vector2((30 if is_bat else 24) * facing_direction, hit_y)
 		elif weapon_type == "ranged":
 			_fire_ranged(weapon_id)
+		elif sec_type == "ranged":
+			_fire_ranged(sec_id)
 
 	# Secondary Attack: [Z]
 	elif Input.is_action_just_pressed("attack_ranged"):
@@ -343,6 +517,15 @@ func _handle_attacks(dt: float) -> void:
 			melee_hitbox.position = Vector2((30 if is_bat else 24) * facing_direction, hit_y)
 
 func _fire_ranged(weapon_id: String) -> void:
+	if emp_timer > 0.0:
+		return
+	var mouse_pos = get_global_mouse_position()
+	if mouse_pos.x < global_position.x - 4.0:
+		facing_direction = -1
+	elif mouse_pos.x > global_position.x + 4.0:
+		facing_direction = 1
+	sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+
 	if weapon_id == "flamethrower":
 		if GameManager.consume_ep(8.0):
 			_spawn_flame_puff()
@@ -356,21 +539,44 @@ func _fire_ranged(weapon_id: String) -> void:
 	attack_duration = 0.20
 	attack_timer = 0.20
 
-	var proj = preload("res://scenes/projectile_laser.tscn").instantiate()
-	var hand_y = position.y + (6 if is_crouching else 0)
-	proj.position = Vector2(position.x + 20 * facing_direction, hand_y)
-	proj.direction = Vector2(facing_direction, 0)
-	get_parent().add_child(proj)
+	var hand_pos = global_position + Vector2(18 * facing_direction, 6 if is_crouching else -2)
+	var aim_dir = (mouse_pos - hand_pos).normalized()
+	if aim_dir.length_squared() == 0:
+		aim_dir = Vector2(facing_direction, 0)
+
+	var parent_node = get_parent()
+	if parent_node:
+		var proj = preload("res://scenes/projectile_laser.tscn").instantiate()
+		parent_node.add_child(proj)
+		proj.global_position = hand_pos
+		proj.direction = aim_dir
+		proj.rotation = aim_dir.angle()
 
 func _spawn_flame_puff() -> void:
 	var flame_scene = load("res://scenes/projectile_flame.tscn")
 	if not flame_scene:
 		return
-	var flame = flame_scene.instantiate()
-	var hand_y = position.y + (6 if is_crouching else 0)
-	flame.position = Vector2(position.x + 24 * facing_direction, hand_y + randf_range(-3.0, 3.0))
-	flame.direction = Vector2(facing_direction, randf_range(-0.12, 0.12)).normalized()
-	get_parent().add_child(flame)
+	var mouse_pos = get_global_mouse_position()
+	if mouse_pos.x < global_position.x - 4.0:
+		facing_direction = -1
+	elif mouse_pos.x > global_position.x + 4.0:
+		facing_direction = 1
+	sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+
+	var spawn_pos = global_position + Vector2(20 * facing_direction, 6 if is_crouching else -2)
+	var aim_dir = (mouse_pos - spawn_pos).normalized()
+	if aim_dir.length_squared() == 0:
+		aim_dir = Vector2(facing_direction, 0)
+
+	aim_dir = aim_dir.rotated(randf_range(-0.14, 0.14))
+
+	var parent_node = get_parent()
+	if parent_node:
+		var flame = flame_scene.instantiate()
+		parent_node.add_child(flame)
+		flame.global_position = spawn_pos + aim_dir * 6.0
+		flame.direction = aim_dir
+		flame.rotation = aim_dir.angle()
 
 func _handle_grenade_aiming(_dt: float) -> void:
 	if Input.is_action_just_pressed("grenade"):
@@ -464,120 +670,181 @@ func _draw() -> void:
 			draw_arc(end_pt, 9.0, 0.0, TAU, 16, Color(1.0, 0.25, 0.25, 0.9), 2.0)
 			draw_circle(end_pt, 3.0, Color(1.0, 0.25, 0.25, 0.9))
 
-func _try_grapple() -> void:
+	# 3. Grenade Status Effect Visual Overlays on Player
+	if freeze_timer > 0.0:
+		# Crystalline Hexagonal Ice Block Encasing the Player
+		var ice_poly = PackedVector2Array([
+			Vector2(-13, -18),
+			Vector2(0, -23),
+			Vector2(13, -18),
+			Vector2(15, 14),
+			Vector2(-15, 14)
+		])
+		draw_colored_polygon(ice_poly, Color(0.32, 0.85, 1.0, 0.52))
+		var outline_pts = PackedVector2Array([
+			Vector2(-13, -18), Vector2(0, -23), Vector2(13, -18),
+			Vector2(15, 14), Vector2(-15, 14), Vector2(-13, -18)
+		])
+		draw_polyline(outline_pts, Color(0.9, 0.98, 1.0, 0.95), 1.8)
+		# Internal frost specular facet lines
+		draw_line(Vector2(-9, -14), Vector2(8, 6), Color(1.0, 1.0, 1.0, 0.7), 1.5)
+		draw_line(Vector2(6, -15), Vector2(-6, 8), Color(0.8, 0.96, 1.0, 0.6), 1.2)
+
+	if emp_timer > 0.0:
+		# Crackling Electric Lightning Arcs around Player Chassis
+		var t_ms = Time.get_ticks_msec() / 40.0
+		for i in range(3):
+			var y_a = -12.0 + float(i) * 10.0
+			var p1 = Vector2(-12.0, y_a + sin(t_ms + i) * 3.0)
+			var p2 = Vector2(0.0, y_a + cos(t_ms * 1.3 + i) * 5.0)
+			var p3 = Vector2(12.0, y_a - sin(t_ms * 0.9 + i) * 3.0)
+			draw_polyline(PackedVector2Array([p1, p2, p3]), Color(0.25, 0.92, 1.0, 0.95), 1.8)
+			draw_circle(p2, 2.0, Color(1.0, 0.95, 0.4, 0.95))
+
+	if burn_timer > 0.0:
+		# Animated Rising Flame Tongues on Player
+		var t_sec = Time.get_ticks_msec() / 1000.0
+		for i in range(-1, 2):
+			var fx = float(i) * 6.5
+			var fh = 12.0 + 5.0 * sin(t_sec * 16.0 + float(i) * 2.1)
+			var base = Vector2(fx, 8.0)
+			var tip = Vector2(fx + cos(t_sec * 11.0 + i) * 3.0, 8.0 - fh)
+			draw_colored_polygon(PackedVector2Array([
+				base + Vector2(-4.0, 0),
+				base + Vector2(4.0, 0),
+				tip
+			]), Color(1.0, 0.38, 0.05, 0.8))
+			draw_colored_polygon(PackedVector2Array([
+				base + Vector2(-2.0, 0),
+				base + Vector2(2.0, 0),
+				base + (tip - base) * 0.6
+			]), Color(1.0, 0.92, 0.3, 0.9))
+
+func _find_closest_grapple_ring(exclude_current: bool = false) -> Node2D:
 	var rings = get_tree().get_nodes_in_group("grapple_rings")
-	var target_ring: Node2D = null
-	var best_score: float = -999999.0
+	var closest_ring: Node2D = null
+	var min_dist: float = GRAPPLE_RANGE
 	var space_state = get_world_2d().direct_space_state
 
 	for ring in rings:
-		# If already grappling to this exact ring, skip so we can chain to a new one
-		if is_grappling and ring.global_position.distance_to(grapple_anchor) < 15.0:
+		if not is_instance_valid(ring):
+			continue
+		if exclude_current and is_grappling and ring == current_grapple_ring:
 			continue
 
 		var dist = global_position.distance_to(ring.global_position)
-		if dist > GRAPPLE_RANGE:
+		if dist > min_dist:
 			continue
 
 		# Raycast line of sight check: cannot grapple through solid walls/ceilings!
-		var ray = PhysicsRayQueryParameters2D.create(global_position + Vector2(0, -8), ring.global_position)
+		var ray = PhysicsRayQueryParameters2D.create(global_position + Vector2(0, -6), ring.global_position)
 		ray.exclude = [self]
 		ray.collision_mask = 1
 		var hit = space_state.intersect_ray(ray)
 		if not hit.is_empty():
 			continue
 
-		# Prioritize rings ahead in facing direction and above
-		var dx = (ring.global_position.x - global_position.x) * facing_direction
-		var dy = ring.global_position.y - global_position.y
-		var score = (GRAPPLE_RANGE - dist) + (dx * 1.5) - (max(0.0, dy) * 1.8)
-		if score > best_score:
-			best_score = score
-			target_ring = ring
+		min_dist = dist
+		closest_ring = ring
 
-	if target_ring:
-		is_grappling = true
-		grapple_anchor = target_ring.global_position
-		grapple_length = clamp(global_position.distance_to(grapple_anchor), 110.0, GRAPPLE_RANGE)
-		grapple_angle = (global_position - grapple_anchor).angle()
+	return closest_ring
 
-		# Preserve incoming tangential momentum:
-		var v_tangent = -velocity.x * sin(grapple_angle) + velocity.y * cos(grapple_angle)
-		grapple_angular_vel = v_tangent / grapple_length
+func _try_grapple() -> void:
+	var target_ring = _find_closest_grapple_ring(is_grappling)
+	if not target_ring:
+		return
 
-		# Boost initial momentum forward if moving or jumping forward
-		if facing_direction > 0:
-			if grapple_angular_vel > -1.2:
-				grapple_angular_vel = -2.2
-		else:
-			if grapple_angular_vel < 1.2:
-				grapple_angular_vel = 2.2
+	is_grappling = true
+	current_grapple_ring = target_ring
+	grapple_anchor = target_ring.global_position
 
-		queue_redraw()
+	# Start at exact current distance so the player NEVER teleports on latch!
+	var current_dist = max(global_position.distance_to(grapple_anchor), 32.0)
+	grapple_length = current_dist
+	grapple_angle = (global_position - grapple_anchor).angle()
 
-func _process_grapple_physics(dt: float) -> void:
-	# 1. Gravity angular acceleration (correct sign for Godot +Y downwards):
-	var angular_accel = (gravity / grapple_length) * cos(grapple_angle)
+	# Project incoming linear velocity smoothly onto the pendulum tangent:
+	var rope_vec = global_position - grapple_anchor
+	var r_hat = rope_vec / current_dist
+	# Tangent pointing rightwards at the bottom of the swing arc
+	var t_right = Vector2(r_hat.y, -r_hat.x)
+	var v_tan = velocity.dot(t_right)
 
-	# 2. Player Swing Pumping with [A] / [D] / Left / Right
-	var swing_input = Input.get_axis("move_left", "move_right")
-	if swing_input != 0.0:
-		var pump_force = (480.0 / grapple_length)
-		if swing_input > 0.0:
-			grapple_angular_vel -= pump_force * dt
-			facing_direction = 1
-			sprite.scale.x = 1
-		elif swing_input < 0.0:
-			grapple_angular_vel += pump_force * dt
-			facing_direction = -1
-			sprite.scale.x = -1
+	# If player latched from rest or low horizontal speed, give a natural swing push in facing direction
+	if abs(v_tan) < 140.0:
+		v_tan = 165.0 * float(facing_direction)
 
-	# Apply gravity acceleration
-	grapple_angular_vel += angular_accel * dt
-
-	# 3. Damping / Friction: swing loses momentum over time if just hanging
-	var damping = pow(0.92, dt)
-	grapple_angular_vel *= damping
-
-	# Update angle
-	grapple_angle += grapple_angular_vel * dt
-
-	# Clamp angle to lower hemisphere (no wrapping over the top)
-	var min_angle = deg_to_rad(15.0)
-	var max_angle = deg_to_rad(165.0)
-	if grapple_angle < min_angle:
-		grapple_angle = min_angle
-		grapple_angular_vel = 0.0
-	elif grapple_angle > max_angle:
-		grapple_angle = max_angle
-		grapple_angular_vel = 0.0
-
-	# 4. Smooth collision-aware pendulum update:
-	# Sets velocity to drive towards target position, allowing move_and_slide() to respect walls (NO CLIPPING!)
-	var target_pos = grapple_anchor + Vector2(cos(grapple_angle), sin(grapple_angle)) * grapple_length
-	velocity = (target_pos - global_position) / dt
-
-	# If hitting a wall, dampen angular velocity so we slide smoothly without sticking
-	if is_on_wall():
-		grapple_angular_vel *= 0.55
-		grapple_length = clamp(global_position.distance_to(grapple_anchor), 90.0, GRAPPLE_RANGE)
-		grapple_angle = (global_position - grapple_anchor).angle()
-
-	# 5. Redraw the visible grappling hook cable
+	velocity = t_right * v_tan
+	grapple_angular_vel = -v_tan / max(grapple_length, 60.0)
 	queue_redraw()
 
-	# 6. Catapult Jump Off with [SPACE]
+func _process_grapple_physics(dt: float) -> void:
+	# TRUE CARTESIAN VELOCITY-PROJECTION PENDULUM (Zero Teleportation, Real Gravity & Damping)
+	var rope_vec = global_position - grapple_anchor
+	var dist = max(rope_vec.length(), 1.0)
+	var r_hat = rope_vec / dist
+	var t_right = Vector2(r_hat.y, -r_hat.x) # Unit tangent pointing right at bottom of arc
+
+	# 1. Smoothly reel cable towards safe swing clearance (GRAPPLE_MIN_LEN..GRAPPLE_IDEAL_MAX_LEN)
+	# Never snaps in 1 frame; smoothly reels at 165 px/s so player clears the acid pit!
+	if grapple_length > GRAPPLE_IDEAL_MAX_LEN:
+		grapple_length = move_toward(grapple_length, GRAPPLE_IDEAL_MAX_LEN, 165.0 * dt)
+	elif grapple_length < GRAPPLE_MIN_LEN:
+		grapple_length = move_toward(grapple_length, GRAPPLE_MIN_LEN, 140.0 * dt)
+
+	# 2. Apply Real Gravity
+	velocity.y += gravity * dt
+
+	# 3. Player Swing Pumping with [A] / [D] (Left / Right)
+	var swing_input = Input.get_axis("move_left", "move_right")
+	if swing_input != 0.0 and r_hat.y > -0.15:
+		velocity += t_right * (swing_input * 310.0 * dt)
+		facing_direction = 1 if swing_input > 0.0 else -1
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+
+	# 4. Project Velocity onto Rope Tangent (Eliminate outward radial stretch)
+	var radial_vel = velocity.dot(r_hat)
+	velocity -= r_hat * radial_vel
+
+	# 5. Natural Pendulum Damping ("sa isi piarda din swing cu cat sta mai mult agatat")
+	var damp_rate = 0.89 if swing_input == 0.0 else 0.97
+	velocity *= pow(damp_rate, dt)
+
+	# Clamp maximum tangential swing speed so it always feels smooth and controlled
+	if velocity.length() > 430.0:
+		velocity = velocity.normalized() * 430.0
+
+	# 6. Soft Radial Spring Correction to maintain rope length without ever snapping position
+	var dist_error = dist - grapple_length
+	var radial_correction = clamp(dist_error * 11.0, -210.0, 210.0)
+	velocity -= r_hat * radial_correction
+
+	# Prevent swinging above the ceiling anchor
+	if global_position.y < grapple_anchor.y - 10.0 and velocity.y < 0.0:
+		velocity.y *= 0.4
+
+	# Update angle tracking for visual compatibility
+	grapple_angle = rope_vec.angle()
+	grapple_angular_vel = -velocity.dot(t_right) / max(grapple_length, 60.0)
+
+	# 7. Redraw visible grappling hook cable
+	queue_redraw()
+
+	# 8. Manual Jump Off with [SPACE] (Catapult Launch)
 	if Input.is_action_just_pressed("jump"):
-		var launch_vel = velocity
-		_release_grapple()
-		velocity = launch_vel
-		velocity.y = min(velocity.y, jump_velocity * 0.95)
-		velocity.x += facing_direction * 160.0
-		can_double_jump = true
-		has_double_jumped = false
+		_catapult_release_grapple()
+
+func _catapult_release_grapple() -> void:
+	var launch_vel = velocity
+	_release_grapple()
+	velocity.x = clamp(launch_vel.x * 1.15 + facing_direction * 95.0, -390.0, 390.0)
+	velocity.y = min(launch_vel.y, jump_velocity * 0.88)
+	can_double_jump = true
+	has_double_jumped = false
 
 func _release_grapple() -> void:
 	is_grappling = false
+	current_grapple_ring = null
 	queue_redraw()
 
 func _update_animations(dt: float, input_dir: float) -> void:
@@ -590,22 +857,41 @@ func _update_animations(dt: float, input_dir: float) -> void:
 	if is_crouching:
 		sprite.texture = tex_damaged_crouch if is_dmg else tex_standard_crouch
 		sprite.hframes = 2
-		sprite.frame = int(anim_timer * 4.0) % 2
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+		if input_dir != 0.0:
+			# Crouch Walk: animated crawl cycle synchronized with movement speed + subtle crawl bob
+			var crawl_frame = int(anim_timer * 7.5) % 2
+			sprite.frame = crawl_frame
+			sprite.offset.x = (1 if crawl_frame == 1 else 0) * facing_direction
+			sprite.offset.y = 1 if crawl_frame == 1 else 0
+		else:
+			# Crouch Idle: steady low-duck posture (frame 0, no twitching)
+			sprite.frame = 0
+			sprite.offset = Vector2.ZERO
+	elif is_wall_sliding:
+		sprite.texture = tex_jump
+		sprite.hframes = 3
+		sprite.frame = 1
+		sprite.scale = Vector2(wall_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 	elif not is_on_floor():
-		sprite.texture = tex_standard_walk
-		sprite.hframes = 8
-		sprite.frame = 3
+		sprite.texture = tex_jump
+		sprite.hframes = 3
+		sprite.frame = 0 if velocity.y < 0.0 else 2
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+		sprite.offset = Vector2(0, 0)
 	elif input_dir != 0.0:
 		sprite.texture = tex_damaged_walk if is_dmg else tex_standard_walk
 		sprite.hframes = 8
 		var speed_mult = 12.0 if is_sprinting else 8.0
 		sprite.frame = int(anim_timer * speed_mult) % 8
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 	else:
 		sprite.texture = tex_damaged_idle if is_dmg else tex_standard_idle
 		sprite.hframes = 4
 		sprite.frame = int(anim_timer * 4.0) % 4
+		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
 
 # SAFE MELEE HIT: PASSES BOTH (amount, knockback) TO PREVENT ENGINE CRASH!
@@ -616,6 +902,79 @@ func _on_melee_hit(area: Area2D) -> void:
 		var dmg = 35.0 if weapon_id == "bat" else 25.0
 		var kb = float(facing_direction)
 		target.take_damage(dmg, kb)
+
+func add_camera_shake(intensity: float, duration: float) -> void:
+	var mult = clamp(GameManager.setting_screen_shake / 100.0, 0.0, 2.0)
+	if mult <= 0.01:
+		return
+	camera_shake_intensity = max(camera_shake_intensity, intensity * mult)
+	camera_shake_timer = max(camera_shake_timer, duration)
+
+func take_grenade_damage(amount: float) -> void:
+	# Direct grenade/burn damage to player (bypasses contact i-frames so grenade blasts always register!)
+	if is_shield_raised and GameManager.player_shield > 0.0:
+		var leftover = GameManager.damage_shield(amount)
+		if leftover <= 0.0:
+			return
+		amount = leftover
+
+	GameManager.player_hp = max(0.0, GameManager.player_hp - amount)
+	GameManager.player_health_changed.emit(GameManager.player_hp, GameManager.player_max_hp)
+	if GameManager.player_hp <= 0.0:
+		_die()
+
+func apply_grenade_effect(g_type: String, blast_pos: Vector2, falloff: float) -> void:
+	var away_dir = (global_position - blast_pos).normalized()
+	if away_dir.length_squared() < 0.01:
+		away_dir = Vector2(facing_direction, -0.5).normalized()
+
+	match g_type:
+		"frag":
+			# Frag Shrapnel Explosion: High self-damage + explosive radial launch!
+			take_grenade_damage(35.0 * falloff)
+			if is_grappling:
+				_release_grapple()
+			velocity = Vector2(away_dir.x * 290.0 * falloff, min(away_dir.y * 260.0, -210.0) * falloff)
+			blast_stun_timer = 0.28
+			i_frame_timer = 0.6
+
+		"cryo":
+			# Cryo Frost Nova: Freezes the player solid in an ice block, then chills!
+			take_grenade_damage(20.0 * falloff)
+			if is_grappling:
+				_release_grapple()
+			freeze_timer = max(freeze_timer, 1.8 * falloff)
+			chill_timer = max(chill_timer, 3.2 * falloff)
+			velocity.x *= 0.25
+
+		"emp":
+			# EMP Electromagnetic Blast: Short-circuits Shield & Core Stamina, disables electronics!
+			take_grenade_damage(25.0 * falloff)
+			GameManager.player_shield = 0.0
+			GameManager.shield_regen_timer = 4.0
+			GameManager.player_shield_changed.emit(GameManager.player_shield, GameManager.player_max_shield)
+			GameManager.player_ep = max(0.0, GameManager.player_ep - 45.0 * falloff)
+			GameManager.pause_ep_regen(3.0)
+			GameManager.player_energy_changed.emit(GameManager.player_ep, GameManager.player_max_ep)
+			emp_timer = max(emp_timer, 2.6 * falloff)
+			velocity = Vector2(away_dir.x * 140.0, -110.0) * falloff
+			blast_stun_timer = 0.18
+
+		"fire":
+			# Thermite Incendiary Blast: Initial blast damage + sets player on fire (Burning DoT)!
+			take_grenade_damage(24.0 * falloff)
+			burn_timer = max(burn_timer, 3.5)
+			burn_tick_timer = 0.0
+			velocity = Vector2(away_dir.x * 160.0, -130.0) * falloff
+			blast_stun_timer = 0.18
+
+		"fire_pool":
+			# Stepping into lingering thermite fire pool
+			if burn_timer <= 0.5:
+				take_grenade_damage(4.0)
+			burn_timer = max(burn_timer, 1.6)
+
+	queue_redraw()
 
 func take_damage(amount: float, knockback_dir: float = 0.0) -> void:
 	if i_frame_timer > 0.0:
@@ -640,6 +999,14 @@ func take_damage(amount: float, knockback_dir: float = 0.0) -> void:
 func die_in_hazard(hazard_name: String = "acid") -> void:
 	if is_grappling:
 		_release_grapple()
+	is_dashing = false
+	freeze_timer = 0.0
+	chill_timer = 0.0
+	emp_timer = 0.0
+	burn_timer = 0.0
+	blast_stun_timer = 0.0
+	if dash_particles:
+		dash_particles.emitting = false
 
 	velocity = Vector2.ZERO
 	GameManager.player_hp = GameManager.player_max_hp
@@ -651,6 +1018,7 @@ func die_in_hazard(hazard_name: String = "acid") -> void:
 
 	global_position = respawn_position
 	i_frame_timer = 1.0
+	queue_redraw()
 
 	if sprite:
 		var tween = create_tween()
@@ -661,3 +1029,51 @@ func die_in_hazard(hazard_name: String = "acid") -> void:
 
 func _die() -> void:
 	die_in_hazard("defeated")
+
+func _spawn_dash_ghost() -> void:
+	var parent_node = get_parent()
+	if not parent_node or not sprite:
+		return
+	var ghost = DashGhostClass.new()
+	parent_node.add_child(ghost)
+	ghost.init(
+		sprite.texture,
+		sprite.hframes,
+		sprite.frame,
+		sprite.scale,
+		sprite.offset,
+		sprite.global_position,
+		Color(0.25, 0.85, 1.0, 0.75),
+		0.25
+	)
+
+func _trigger_air_jump_effect() -> void:
+	var parent_node = get_parent()
+	if parent_node and AirJumpEffectScene:
+		var fx = AirJumpEffectScene.instantiate()
+		parent_node.add_child(fx)
+		fx.global_position = global_position + Vector2(0, 14)
+
+	# Spawn jump ghost at takeoff point with electric cyan tint
+	if parent_node and sprite:
+		var ghost = DashGhostClass.new()
+		parent_node.add_child(ghost)
+		ghost.init(
+			sprite.texture,
+			sprite.hframes,
+			sprite.frame,
+			sprite.scale,
+			sprite.offset,
+			sprite.global_position,
+			Color(0.35, 0.9, 1.0, 0.65),
+			0.22
+		)
+
+	# Squash & stretch impulse tween on the robot chassis
+	sprite_scale_mod = Vector2(1.22, 0.78)
+	var tw = create_tween()
+	if tw:
+		tw.tween_property(self, "sprite_scale_mod", Vector2(0.85, 1.25), 0.06).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		tw.tween_property(self, "sprite_scale_mod", Vector2(1.0, 1.0), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+

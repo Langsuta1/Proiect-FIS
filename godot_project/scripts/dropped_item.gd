@@ -37,7 +37,7 @@ func _process(dt: float) -> void:
 	sprite.position.y = sin(Time.get_ticks_msec() / 250.0) * 3.5
 
 	if is_player_nearby:
-		if Input.is_action_just_pressed("interact"):
+		if GameManager.setting_auto_pickup or Input.is_action_just_pressed("interact"):
 			_pickup()
 
 func _on_body_entered(body: Node2D) -> void:

@@ -10,6 +10,7 @@ var is_destroyed: bool = false
 @onready var hurtbox: Area2D = $Hurtbox
 
 func _ready() -> void:
+	max_hp = max_hp * GameManager.difficulty_multiplier
 	hp = max_hp
 	if hurtbox:
 		hurtbox.add_to_group("enemies")

@@ -21,14 +21,21 @@ extends CanvasLayer
 @onready var slot_sec_ui: InventorySlotUI = $InventoryModal/Panel/HBox/LeftCol/SlotSec
 @onready var backpack_grid: GridContainer = $InventoryModal/Panel/HBox/RightCol/BackpackGrid
 
+const PauseMenuClass = preload("res://scripts/pause_menu.gd")
+
 var selected_slot_loc: String = ""
 var selected_slot_idx: int = -1
+var pause_menu: Control = null
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	add_to_group("hud")
 	layer = 100
 	if boss_panel: boss_panel.visible = false
 	if inv_modal: inv_modal.visible = false
+
+	pause_menu = PauseMenuClass.new()
+	add_child(pause_menu)
 
 	slot_main_ui.slot_type = "main"
 	slot_main_ui.slot_index = 0
@@ -43,13 +50,26 @@ func _ready() -> void:
 	GameManager.inventory_updated.connect(_update_inventory_ui)
 	GameManager.boss_health_changed.connect(_on_boss_health)
 	GameManager.boss_defeated.connect(_on_boss_defeated)
+	GameManager.keybinds_updated.connect(_update_hud_display)
 
 	_setup_backpack_slots()
 	_update_hud_display()
 
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("inventory"):
+		if pause_menu and pause_menu.visible:
+			return
 		_toggle_inventory()
+	elif event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.is_pressed() and not event.is_echo() and event.keycode == KEY_ESCAPE):
+		if inv_modal and inv_modal.visible:
+			_close_inventory()
+			get_viewport().set_input_as_handled()
+		elif pause_menu:
+			if pause_menu.visible:
+				pause_menu.close_pause_menu()
+			else:
+				pause_menu.open_pause_menu()
+			get_viewport().set_input_as_handled()
 
 func _toggle_inventory() -> void:
 	if inv_modal:
@@ -58,6 +78,12 @@ func _toggle_inventory() -> void:
 		selected_slot_idx = -1
 		if inv_modal.visible:
 			_update_inventory_ui()
+
+func _close_inventory() -> void:
+	if inv_modal and inv_modal.visible:
+		inv_modal.visible = false
+		selected_slot_loc = ""
+		selected_slot_idx = -1
 
 func _setup_backpack_slots() -> void:
 	if not backpack_grid: return
@@ -72,6 +98,7 @@ func _setup_backpack_slots() -> void:
 		backpack_grid.add_child(slot_inst)
 
 func _update_inventory_ui() -> void:
+	_update_hud_display()
 	if not inv_modal or not inv_modal.visible:
 		return
 
@@ -90,6 +117,10 @@ func _update_inventory_ui() -> void:
 			slot_ctrl.update_slot(GameManager.backpack[i], is_sel)
 
 func _on_slot_ui_clicked(loc: String, idx: int) -> void:
+	var clicked_item = GameManager.get_slot_item(loc, idx)
+	if clicked_item.get("type", "") == "grenade":
+		GameManager.set_active_grenade(clicked_item.get("id", "frag"))
+
 	if selected_slot_loc == "":
 		selected_slot_loc = loc
 		selected_slot_idx = idx
@@ -121,7 +152,11 @@ func _update_hud_display() -> void:
 	var s_name = GameManager.secondary_hand.get("name", "EMPTY")
 	if weapon_primary_lbl: weapon_primary_lbl.text = "MAIN HAND: " + m_name.to_upper()
 	if weapon_secondary_lbl: weapon_secondary_lbl.text = "SECONDARY: " + s_name.to_upper()
-	if grenade_lbl: grenade_lbl.text = "GRENADE: " + GameManager.active_grenade.to_upper()
+	if grenade_lbl:
+		var g_cnt = GameManager.get_grenade_count(GameManager.active_grenade)
+		var g_key = GameManager.get_action_binding_text("grenade")
+		var c_key = GameManager.get_action_binding_text("cycle_grenade")
+		grenade_lbl.text = "GRENADE [" + g_key + " / " + c_key + "]: " + GameManager.active_grenade.to_upper() + " (x" + str(g_cnt) + ")"
 
 func _on_hp_changed(_hp: float, _mx: float) -> void: _update_hud_display()
 func _on_ep_changed(_ep: float, _mx: float) -> void: _update_hud_display()
@@ -134,7 +169,12 @@ func _on_boss_health(curr: float, mx: float, phase: int) -> void:
 		boss_bar.max_value = mx
 		boss_bar.value = curr
 		if boss_phase_lbl:
-			boss_phase_lbl.text = "PHASE 2 - ENRAGED CRUSHER" if phase == 2 else "PHASE 1 - COMPACTOR OVERLOAD"
+			var p_title = "PHASE 2 - ENRAGED CRUSHER" if phase == 2 else "PHASE 1 - COMPACTOR OVERLOAD"
+			boss_phase_lbl.text = p_title + " (" + str(int(ceil(curr))) + " / " + str(int(mx)) + " HP)"
 
 func _on_boss_defeated() -> void:
-	if boss_panel: boss_panel.visible = false
+	if boss_panel:
+		boss_bar.value = 0.0
+		if boss_phase_lbl:
+			boss_phase_lbl.text = "★ VICTORY! THE CRUSHER TITAN DEFEATED! ★"
+			boss_phase_lbl.add_theme_color_override("font_color", Color(0.25, 1.0, 0.45, 1.0))
