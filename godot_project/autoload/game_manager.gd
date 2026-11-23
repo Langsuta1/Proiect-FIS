@@ -14,54 +14,59 @@ signal keybinds_updated()
 var player_chassis: String = "standard"
 
 # -------------------------------------------------------------
-# DIFFICULTY SYSTEM ("Will You Snail?" Sarcastic AI Humor Style)
+# DIFFICULTY SYSTEM
 # Scales both enemy HP and enemy damage cleanly per tier
 # -------------------------------------------------------------
-var difficulty_index: int = 0
-var difficulty_name: String = "THE EASIEST"
+var difficulty_index: int = 1
+var difficulty_name: String = "MEDIUM"
 var difficulty_multiplier: float = 1.0
 var difficulty_damage_multiplier: float = 1.0
+var difficulty_fall_multiplier: float = 1.0
 
 const DIFFICULTY_TIERS: Array = [
 	{
 		"id": 0,
-		"name": "THE EASIEST",
-		"mult": 1.0,
-		"dmg_mult": 1.0,
-		"tag": "MODUL MELC ADORMIT",
+		"name": "EASY",
+		"mult": 0.75,
+		"dmg_mult": 0.75,
+		"fall_mult": 0.5,
+		"tag": "MOD RELAXAT",
 		"color": Color(0.22, 0.88, 0.55),
-		"desc": "Experiență relaxată. Inamici fragili și lovituri blânde, ideal pentru explorare.",
-		"quote": "\"Pentru oameni care joacă cu monitorul stins. Inamicii sunt făcuți din carton umed.\""
+		"desc": "Inamici mai fragili și daune reduse. Ideal pentru explorare și acomodare cu mecanicile.",
+		"quote": "HP Inamici: 75%  •  Daune: 75%  •  Fall Damage: 50%  —  Recomandat pentru explorare."
 	},
 	{
 		"id": 1,
-		"name": "VERY EASY",
-		"mult": 1.5,
-		"dmg_mult": 1.3,
-		"tag": "ÎNCĂ CU ROȚI AJUTĂTOARE",
+		"name": "MEDIUM",
+		"mult": 1.0,
+		"dmg_mult": 1.0,
+		"fall_mult": 1.0,
+		"tag": "EXPERIENȚA STANDARD",
 		"color": Color(0.22, 0.78, 0.98),
-		"desc": "Inamici ceva mai rezistenți și mai agresivi, dar încă foarte abordabili.",
-		"quote": "\"Tot ușor e, dar măcar am băgat baterii noi în drone și crawlere.\""
+		"desc": "Echilibru optim între explorare și luptă. Dificultatea recomandată pentru primul playthrough.",
+		"quote": "HP Inamici: 100%  •  Daune: 100%  •  Fall Damage: 100%  —  Experiența standard SCRAPBORN."
 	},
 	{
 		"id": 2,
-		"name": "EASY",
-		"mult": 2.3,
-		"dmg_mult": 1.7,
-		"tag": "AI-UL ÎNCEPE SĂ RÂDĂ",
+		"name": "HARD",
+		"mult": 1.5,
+		"dmg_mult": 1.4,
+		"fall_mult": 1.5,
+		"tag": "PROVOCARE TACTICĂ",
 		"color": Color(0.96, 0.62, 0.08),
-		"desc": "Provocare serioasă. Inamicii rezistă mult și lovesc destul de tare.",
-		"quote": "\"Așa numesc eu 'Easy'. Tu probabil o să plângi când ajungi la The Crusher Titan.\""
+		"desc": "Inamici mai rezistenți și lovituri mai puternice. Necesită eschive precise și folosirea scutului.",
+		"quote": "HP Inamici: 150%  •  Daune: 140%  •  Fall Damage: 150%  —  Pentru jucători care vor lupte intense."
 	},
 	{
 		"id": 3,
-		"name": "ULTRA EASY (TRUST ME)",
-		"mult": 3.2,
-		"dmg_mult": 2.2,
-		"tag": "100% CORECT, PROMIT :)",
+		"name": "NIGHTMARE",
+		"mult": 2.2,
+		"dmg_mult": 1.85,
+		"fall_mult": 2.2,
+		"tag": "PROVOCARE EXTREMĂ",
 		"color": Color(0.95, 0.28, 0.32),
-		"desc": "Brutal și nemilos. Blindaj greu și daune masive la fiecare greșeală.",
-		"quote": "\"Cel mai 'ușor' mod posibil! Inamicii sunt tancuri blindate. Sper că îți place baia în acid verde.\""
+		"desc": "Blindaj greu și daune majore la fiecare greșeală. Recomandat doar veteranilor.",
+		"quote": "HP Inamici: 220%  •  Daune: 185%  •  Fall Damage: 220%  —  Fiecare greșeală poate fi fatală."
 	}
 ]
 
@@ -125,6 +130,18 @@ var secondary_weapon: String:
 		secondary_hand["id"] = val
 
 var active_grenade: String = "frag"
+
+# Boss Fight & Inventory Checkpoint Auto-Save
+var is_boss_fight_active: bool = false
+var is_boss_defeated: bool = false
+var saved_inventory_snapshot: Dictionary = {}
+var has_boss_inventory_snapshot: bool = false
+const INVENTORY_SAVE_PATH: String = "user://inventory_checkpoint.json"
+
+# Persistent Save File System (3 Slots)
+const SAVE_SLOT_COUNT: int = 3
+var current_save_slot: int = 1
+var pending_load_data: Dictionary = {}
 
 const ITEM_BANDAGE: Dictionary = {
 	"id": "bandage",
@@ -623,7 +640,287 @@ func get_effective_sfx_volume_db() -> float:
 	var combined = (audio_master_volume / 100.0) * (audio_sfx_volume / 100.0)
 	return linear_to_db(clamp(combined, 0.0001, 1.0))
 
+func clear_fire_hazards() -> void:
+	var tree := get_tree()
+	if not tree:
+		return
+	for node in tree.get_nodes_in_group("fire_hazards"):
+		if is_instance_valid(node):
+			node.queue_free()
+
+func clear_combat_hazards() -> void:
+	clear_fire_hazards()
+	var tree := get_tree()
+	if not tree:
+		return
+	for node in tree.get_nodes_in_group("active_grenades"):
+		if is_instance_valid(node):
+			node.queue_free()
+
+func save_inventory_checkpoint(is_boss_checkpoint: bool = true) -> void:
+	saved_inventory_snapshot = {
+		"main_hand": main_hand.duplicate(true),
+		"secondary_hand": secondary_hand.duplicate(true),
+		"backpack": backpack.duplicate(true),
+		"active_grenade": active_grenade
+	}
+	has_boss_inventory_snapshot = is_boss_checkpoint
+
+	var file := FileAccess.open(INVENTORY_SAVE_PATH, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(saved_inventory_snapshot))
+		file.close()
+
+func restore_inventory_checkpoint() -> bool:
+	if saved_inventory_snapshot.is_empty():
+		if FileAccess.file_exists(INVENTORY_SAVE_PATH):
+			var file := FileAccess.open(INVENTORY_SAVE_PATH, FileAccess.READ)
+			if file:
+				var parsed = JSON.parse_string(file.get_as_text())
+				file.close()
+				if parsed is Dictionary:
+					saved_inventory_snapshot = parsed
+
+	if saved_inventory_snapshot.is_empty():
+		return false
+
+	var snap_main = saved_inventory_snapshot.get("main_hand", {})
+	var snap_sec = saved_inventory_snapshot.get("secondary_hand", {})
+	var snap_bp = saved_inventory_snapshot.get("backpack", [])
+	main_hand = snap_main.duplicate(true) if snap_main is Dictionary else {}
+	secondary_hand = snap_sec.duplicate(true) if snap_sec is Dictionary else {}
+
+	var restored_bp: Array = []
+	if snap_bp is Array:
+		for slot in snap_bp:
+			if slot is Dictionary:
+				var slot_copy: Dictionary = slot.duplicate(true)
+				if slot_copy.has("count"):
+					slot_copy["count"] = int(slot_copy["count"])
+				restored_bp.append(slot_copy)
+			else:
+				restored_bp.append({})
+	while restored_bp.size() < 9:
+		restored_bp.append({})
+	backpack = restored_bp
+
+	if main_hand.has("count"):
+		main_hand["count"] = int(main_hand["count"])
+	if secondary_hand.has("count"):
+		secondary_hand["count"] = int(secondary_hand["count"])
+
+	active_grenade = str(saved_inventory_snapshot.get("active_grenade", "frag"))
+	inventory_updated.emit()
+	weapon_swapped.emit(primary_weapon, secondary_weapon)
+	return true
+
+func clear_inventory_checkpoint() -> void:
+	saved_inventory_snapshot.clear()
+	has_boss_inventory_snapshot = false
+	if FileAccess.file_exists(INVENTORY_SAVE_PATH):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(INVENTORY_SAVE_PATH))
+
+# -------------------------------------------------------------
+# PERSISTENT SAVE FILE SYSTEM (3 SLOTS)
+# -------------------------------------------------------------
+func get_save_path(slot: int) -> String:
+	return "user://scrapborn_save_%d.json" % clampi(slot, 1, SAVE_SLOT_COUNT)
+
+func has_save_slot(slot: int) -> bool:
+	return FileAccess.file_exists(get_save_path(slot))
+
+func get_save_slot_info(slot: int) -> Dictionary:
+	var path := get_save_path(slot)
+	if not FileAccess.file_exists(path):
+		return {}
+	var file := FileAccess.open(path, FileAccess.READ)
+	if not file:
+		return {}
+	var parsed = JSON.parse_string(file.get_as_text())
+	file.close()
+	if parsed is Dictionary:
+		return parsed
+	return {}
+
+func get_latest_save_slot() -> int:
+	var latest_slot: int = 0
+	var latest_unix: int = -1
+	for s in range(1, SAVE_SLOT_COUNT + 1):
+		var info := get_save_slot_info(s)
+		if not info.is_empty():
+			var ts: int = int(info.get("saved_unix", 0))
+			if ts >= latest_unix:
+				latest_unix = ts
+				latest_slot = s
+	return latest_slot
+
+func get_first_empty_save_slot() -> int:
+	for s in range(1, SAVE_SLOT_COUNT + 1):
+		if not has_save_slot(s):
+			return s
+	return 1
+
+func _sanitize_item_dict(raw: Variant) -> Dictionary:
+	if not (raw is Dictionary):
+		return {}
+	var copy: Dictionary = (raw as Dictionary).duplicate(true)
+	if copy.has("count"):
+		copy["count"] = int(copy["count"])
+	if copy.has("heal"):
+		copy["heal"] = float(copy["heal"])
+	return copy
+
+func _sanitize_backpack(raw: Variant) -> Array:
+	var out: Array = []
+	if raw is Array:
+		for slot in raw:
+			out.append(_sanitize_item_dict(slot))
+	while out.size() < 9:
+		out.append({})
+	if out.size() > 9:
+		out.resize(9)
+	return out
+
+func save_game(slot: int = -1, custom_zone: String = "") -> bool:
+	var target_slot: int = clampi(slot if slot > 0 else current_save_slot, 1, SAVE_SLOT_COUNT)
+	current_save_slot = target_slot
+
+	var player_pos := Vector2(80.0, 750.0)
+	var respawn_pos := Vector2(80.0, 750.0)
+	var tree := get_tree()
+	if tree:
+		var player = tree.get_first_node_in_group("player")
+		if is_instance_valid(player):
+			player_pos = player.global_position
+			if "respawn_position" in player:
+				respawn_pos = player.respawn_position
+
+	# If saving during an active boss fight, save safe pre-boss checkpoint & pre-boss inventory
+	var save_main := main_hand.duplicate(true)
+	var save_sec := secondary_hand.duplicate(true)
+	var save_bp := backpack.duplicate(true)
+	var save_grenade := active_grenade
+	if is_boss_fight_active:
+		player_pos = respawn_pos
+		if not saved_inventory_snapshot.is_empty():
+			save_main = _sanitize_item_dict(saved_inventory_snapshot.get("main_hand", save_main))
+			save_sec = _sanitize_item_dict(saved_inventory_snapshot.get("secondary_hand", save_sec))
+			save_bp = _sanitize_backpack(saved_inventory_snapshot.get("backpack", save_bp))
+			save_grenade = str(saved_inventory_snapshot.get("active_grenade", save_grenade))
+
+	var zone_name := custom_zone
+	if zone_name == "":
+		if is_boss_defeated:
+			zone_name = "Crusher Titan Învins"
+		elif respawn_pos.x >= 4000.0 or player_pos.x >= 4000.0:
+			zone_name = "Arena Crusher Titan"
+		elif respawn_pos.x >= 2650.0 or player_pos.x >= 2650.0:
+			zone_name = "Prăpastia de Acid"
+		else:
+			zone_name = "Sector 01 — Scrapyard"
+
+	var payload: Dictionary = {
+		"version": 1,
+		"slot": target_slot,
+		"saved_at": Time.get_datetime_string_from_system(false, true),
+		"saved_unix": int(Time.get_unix_time_from_system()),
+		"zone_name": zone_name,
+		"player_pos": {"x": player_pos.x, "y": player_pos.y},
+		"respawn_pos": {"x": respawn_pos.x, "y": respawn_pos.y},
+		"player_hp": player_hp,
+		"player_max_hp": player_max_hp,
+		"player_ep": player_ep,
+		"player_shield": player_shield,
+		"player_chassis": player_chassis,
+		"difficulty_index": difficulty_index,
+		"difficulty_name": difficulty_name,
+		"boss_defeated": is_boss_defeated,
+		"main_hand": save_main,
+		"secondary_hand": save_sec,
+		"backpack": save_bp,
+		"active_grenade": save_grenade
+	}
+
+	var file := FileAccess.open(get_save_path(target_slot), FileAccess.WRITE)
+	if not file:
+		return false
+	file.store_string(JSON.stringify(payload, "\t"))
+	file.close()
+	print("Game saved to Slot %d (%s)" % [target_slot, zone_name])
+	return true
+
+func delete_save_slot(slot: int) -> void:
+	var path := get_save_path(slot)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+
+func set_difficulty_tier(tier_idx: int) -> void:
+	if tier_idx < 0 or tier_idx >= DIFFICULTY_TIERS.size():
+		return
+	var tier = DIFFICULTY_TIERS[tier_idx]
+	difficulty_index = tier_idx
+	difficulty_name = tier["name"]
+	difficulty_multiplier = float(tier["mult"])
+	difficulty_damage_multiplier = float(tier.get("dmg_mult", tier["mult"]))
+	difficulty_fall_multiplier = float(tier.get("fall_mult", 1.0))
+	difficulty_changed.emit(difficulty_name, difficulty_multiplier)
+
+func start_new_game(slot: int = -1, tier_idx: int = -1) -> void:
+	if tier_idx >= 0:
+		set_difficulty_tier(tier_idx)
+	current_save_slot = clampi(slot if slot > 0 else get_first_empty_save_slot(), 1, SAVE_SLOT_COUNT)
+	pending_load_data.clear()
+	reset_run_state()
+	save_game(current_save_slot, "Sector 01 — Scrapyard")
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func load_game(slot: int) -> bool:
+	var data := get_save_slot_info(slot)
+	if data.is_empty():
+		return false
+
+	current_save_slot = clampi(slot, 1, SAVE_SLOT_COUNT)
+	is_boss_fight_active = false
+	clear_inventory_checkpoint()
+
+	set_difficulty_tier(int(data.get("difficulty_index", 0)))
+	player_max_hp = float(data.get("player_max_hp", 100.0))
+	player_hp = clampf(float(data.get("player_hp", player_max_hp)), 1.0, player_max_hp)
+	player_ep = clampf(float(data.get("player_ep", player_max_ep)), 0.0, player_max_ep)
+	player_shield = clampf(float(data.get("player_shield", player_max_shield)), 0.0, player_max_shield)
+	player_chassis = str(data.get("player_chassis", "standard"))
+	is_boss_defeated = bool(data.get("boss_defeated", false))
+
+	main_hand = _sanitize_item_dict(data.get("main_hand", {}))
+	secondary_hand = _sanitize_item_dict(data.get("secondary_hand", {}))
+	backpack = _sanitize_backpack(data.get("backpack", []))
+	active_grenade = str(data.get("active_grenade", "frag"))
+
+	var p_pos = data.get("player_pos", {"x": 80.0, "y": 750.0})
+	var r_pos = data.get("respawn_pos", {"x": 80.0, "y": 750.0})
+	pending_load_data = {
+		"player_pos": Vector2(float(p_pos.get("x", 80.0)), float(p_pos.get("y", 750.0))),
+		"respawn_pos": Vector2(float(r_pos.get("x", 80.0)), float(r_pos.get("y", 750.0)))
+	}
+
+	inventory_updated.emit()
+	weapon_swapped.emit(primary_weapon, secondary_weapon)
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
+	return true
+
+func return_to_main_menu(save_before_exit: bool = true) -> void:
+	if save_before_exit:
+		save_game(current_save_slot)
+	is_boss_fight_active = false
+	get_tree().paused = false
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+
 func reset_run_state() -> void:
+	is_boss_fight_active = false
+	is_boss_defeated = false
+	clear_inventory_checkpoint()
 	player_hp = player_max_hp
 	player_ep = player_max_ep
 	player_shield = player_max_shield
@@ -651,16 +948,14 @@ func reset_run_state() -> void:
 func get_scaled_enemy_damage(base_damage: float) -> float:
 	return base_damage * difficulty_damage_multiplier
 
+func get_scaled_fall_damage(base_damage: float) -> float:
+	return base_damage * difficulty_fall_multiplier
+
 func apply_difficulty_and_reset_level(tier_idx: int) -> void:
 	if tier_idx < 0 or tier_idx >= DIFFICULTY_TIERS.size():
 		return
-	var tier = DIFFICULTY_TIERS[tier_idx]
-	difficulty_index = tier_idx
-	difficulty_name = tier["name"]
-	difficulty_multiplier = float(tier["mult"])
-	difficulty_damage_multiplier = float(tier.get("dmg_mult", tier["mult"]))
+	set_difficulty_tier(tier_idx)
 	reset_run_state()
-	difficulty_changed.emit(difficulty_name, difficulty_multiplier)
 	get_tree().paused = false
 	get_tree().reload_current_scene()
 

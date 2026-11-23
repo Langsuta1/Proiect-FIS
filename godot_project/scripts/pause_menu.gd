@@ -223,8 +223,8 @@ func _build_ui() -> void:
 	header_hbox.add_child(title_lbl)
 
 	header_diff_lbl = Label.new()
-	header_diff_lbl.text = "DIFICULTATE: THE EASIEST"
-	header_diff_lbl.add_theme_color_override("font_color", Color(0.22, 0.88, 0.55))
+	header_diff_lbl.text = "DIFICULTATE: MEDIUM"
+	header_diff_lbl.add_theme_color_override("font_color", Color(0.22, 0.78, 0.98))
 	header_diff_lbl.add_theme_font_size_override("font_size", 12)
 	header_hbox.add_child(header_diff_lbl)
 
@@ -261,7 +261,7 @@ func _build_ui() -> void:
 	side_vbox.add_child(nav_lbl)
 
 	var tab_names = [
-		"☠  DIFICULTATE (AI)",
+		"⚔  DIFICULTATE",
 		"🔊  OPȚIUNI AUDIO",
 		"⚡  GAMEPLAY & VIDEO",
 		"⌨  KEYBINDS (CONTROALE)"
@@ -308,6 +308,13 @@ func _build_ui() -> void:
 	btn_restart.pressed.connect(func(): _prompt_difficulty_reset(GameManager.difficulty_index, true))
 	side_vbox.add_child(btn_restart)
 
+	var btn_main_menu = Button.new()
+	btn_main_menu.text = "💾 SALVEAZĂ & MENIU"
+	btn_main_menu.custom_minimum_size = Vector2(0, 28)
+	_style_button(btn_main_menu, Color(0.18, 0.1, 0.22), Color(0.75, 0.35, 0.92), Color(0.26, 0.14, 0.32), Color(0.95, 0.88, 1.0), 10)
+	btn_main_menu.pressed.connect(func(): GameManager.return_to_main_menu(true))
+	side_vbox.add_child(btn_main_menu)
+
 	var btn_quit = Button.new()
 	btn_quit.text = "✖ IEȘIRE DIN JOC"
 	btn_quit.custom_minimum_size = Vector2(0, 28)
@@ -344,11 +351,11 @@ func _build_ui() -> void:
 	_switch_tab(0)
 
 # -------------------------------------------------------------------------
-# TAB 0: DIFFICULTY PAGE ("Will You Snail?" Humor + Clean Tier Descriptions)
+# TAB 0: DIFFICULTY PAGE
 # -------------------------------------------------------------------------
 func _build_difficulty_page() -> Control:
 	var built := _create_scrollable_tab_page(
-		"CALIBRARE DIFICULTATE AI",
+		"SELECTARE DIFICULTATE",
 		"Alege nivelul de dificultate dorit. (Atenție: Schimbarea dificultății resetează nivelul curent!)"
 	)
 	var page: VBoxContainer = built["page"]
@@ -413,12 +420,12 @@ func _build_difficulty_page() -> Control:
 		chbox.add_child(sel_btn)
 		diff_card_buttons.append(sel_btn)
 
-	# AI Sarcastic Quote Box pinned at bottom (Fixed height so window never grows)
+	# Difficulty Stats Summary Box pinned at bottom (Fixed height so window never grows)
 	var quote_panel = Panel.new()
-	quote_panel.custom_minimum_size = Vector2(0, 56)
+	quote_panel.custom_minimum_size = Vector2(0, 52)
 	quote_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	quote_panel.clip_contents = true
-	quote_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.04, 0.06, 0.1, 1.0), Color(0.96, 0.62, 0.08, 0.6), 1, 6, 0))
+	quote_panel.add_theme_stylebox_override("panel", _make_stylebox(Color(0.04, 0.06, 0.1, 1.0), Color(0.22, 0.78, 0.98, 0.55), 1, 6, 0))
 	page.add_child(quote_panel)
 
 	var q_margin = MarginContainer.new()
@@ -430,9 +437,9 @@ func _build_difficulty_page() -> Control:
 	ai_quote_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ai_quote_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ai_quote_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	ai_quote_lbl.text = "🤖 AI-UL SCRAPBORN: " + GameManager.DIFFICULTY_TIERS[0]["quote"]
-	ai_quote_lbl.add_theme_color_override("font_color", Color(0.98, 0.82, 0.45))
-	ai_quote_lbl.add_theme_font_size_override("font_size", 10)
+	ai_quote_lbl.text = GameManager.DIFFICULTY_TIERS[GameManager.difficulty_index]["quote"]
+	ai_quote_lbl.add_theme_color_override("font_color", Color(0.84, 0.92, 0.98))
+	ai_quote_lbl.add_theme_font_size_override("font_size", 11)
 	q_margin.add_child(ai_quote_lbl)
 
 	return page
@@ -440,7 +447,7 @@ func _build_difficulty_page() -> Control:
 func _show_ai_quote(tier_idx: int) -> void:
 	if ai_quote_lbl and tier_idx >= 0 and tier_idx < GameManager.DIFFICULTY_TIERS.size():
 		var tier = GameManager.DIFFICULTY_TIERS[tier_idx]
-		ai_quote_lbl.text = "🤖 COMENTARIU AI [" + tier["name"] + "]: " + tier["quote"]
+		ai_quote_lbl.text = "[" + tier["name"] + "]  " + tier["quote"]
 
 func _on_difficulty_card_clicked(tier_idx: int) -> void:
 	_show_ai_quote(tier_idx)

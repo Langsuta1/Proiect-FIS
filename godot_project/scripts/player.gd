@@ -13,6 +13,10 @@ class_name Player
 @export var wall_slide_speed: float = 75.0
 @export var wall_jump_h_force: float = 270.0
 @export var wall_jump_v_velocity: float = -370.0
+@export var wall_slide_stamina_drain: float = 10.0
+@export var wall_jump_stamina_cost: float = 12.0
+@export var safe_fall_height: float = 175.0
+@export var fall_damage_per_pixel: float = 0.14
 
 # Strict I-Frames
 var i_frame_timer: float = 0.0
@@ -32,6 +36,10 @@ var is_wall_sliding: bool = false
 var wall_direction: int = 0
 var wall_jump_lock_timer: float = 0.0
 var wall_coyote_timer: float = 0.0
+
+# Input Overwrite Buffers (allows pressing Space while holding W, A while holding D, etc.)
+var _queued_jump_press: bool = false
+var _last_horizontal_dir: float = 0.0
 
 # Energy Shield
 var is_shield_raised: bool = false
@@ -61,6 +69,10 @@ var burn_timer: float = 0.0
 var burn_tick_timer: float = 0.0
 var blast_stun_timer: float = 0.0
 var heal_flash_timer: float = 0.0
+var fall_flash_timer: float = 0.0
+var last_fall_damage: int = 0
+var _is_tracking_fall: bool = false
+var _fall_start_y: float = 0.0
 var camera_shake_timer: float = 0.0
 var camera_shake_intensity: float = 0.0
 
@@ -104,6 +116,8 @@ var tex_damaged_shoot = preload("res://assets/robot_damaged_shoot_strip4.png")
 var tex_shield = preload("res://assets/shield_energy_barrier_64x64.png")
 var tex_jump = preload("res://assets/robot_jump_strip3.png")
 var tex_dash = preload("res://assets/robot_dash_strip2.png")
+var tex_standard_wallslide = preload("res://assets/robot_standard_wallslide_strip2.png")
+var tex_damaged_wallslide = preload("res://assets/robot_damaged_wallslide_strip2.png")
 
 var anim_timer: float = 0.0
 var sprite_scale_mod: Vector2 = Vector2.ONE
@@ -117,14 +131,47 @@ func _ready() -> void:
 	if melee_hitbox:
 		melee_hitbox.monitoring = false
 		melee_hitbox.area_entered.connect(_on_melee_hit)
+	if not GameManager.pending_load_data.is_empty():
+		var loaded_pos = GameManager.pending_load_data.get("player_pos", global_position)
+		var loaded_respawn = GameManager.pending_load_data.get("respawn_pos", respawn_position)
+		if loaded_pos is Vector2:
+			global_position = Vector2(max(loaded_pos.x, 80.0), loaded_pos.y)
+		if loaded_respawn is Vector2:
+			respawn_position = Vector2(max(loaded_respawn.x, 80.0), loaded_respawn.y)
+		GameManager.pending_load_data.clear()
+	if cam:
+		cam.make_current()
+		cam.reset_smoothing()
 	GameManager.player_health_changed.emit(GameManager.player_hp, GameManager.player_max_hp)
 	GameManager.player_energy_changed.emit(GameManager.player_ep, GameManager.player_max_ep)
 	GameManager.player_shield_changed.emit(GameManager.player_shield, GameManager.player_max_shield)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("jump", false):
+		_queued_jump_press = true
+	if event.is_action_pressed("move_left", false):
+		_last_horizontal_dir = -1.0
+	elif event.is_action_pressed("move_right", false):
+		_last_horizontal_dir = 1.0
+
+func _get_horizontal_input() -> float:
+	var left_held: bool = Input.is_action_pressed("move_left")
+	var right_held: bool = Input.is_action_pressed("move_right")
+	if left_held and right_held:
+		return _last_horizontal_dir
+	elif left_held:
+		return -1.0
+	elif right_held:
+		return 1.0
+	return 0.0
+
 func _physics_process(dt: float) -> void:
+	var jump_just_pressed: bool = _queued_jump_press or Input.is_action_just_pressed("jump")
+	_queued_jump_press = false
 	# Update checkpoint when approaching swing section
 	if global_position.x >= 2650.0 and respawn_position.x < 2650.0:
 		respawn_position = SWING_CHECKPOINT
+		GameManager.save_game(GameManager.current_save_slot, "Prăpastia de Acid")
 
 	# Fall death safety check: strictly if fallen into the toxic green acid chasm or fell out of the world
 	if global_position.y > 890.0 and global_position.x > 2810.0 and global_position.x < 3590.0:
@@ -161,6 +208,9 @@ func _physics_process(dt: float) -> void:
 		queue_redraw()
 	if heal_flash_timer > 0.0:
 		heal_flash_timer -= dt
+		queue_redraw()
+	if fall_flash_timer > 0.0:
+		fall_flash_timer -= dt
 		queue_redraw()
 
 	# Thermite / Fire Burning DoT
@@ -236,7 +286,8 @@ func _physics_process(dt: float) -> void:
 				_try_grapple()
 
 	if is_grappling:
-		_process_grapple_physics(dt)
+		_reset_fall_tracking()
+		_process_grapple_physics(dt, jump_just_pressed)
 		move_and_slide()
 		return
 
@@ -251,6 +302,7 @@ func _physics_process(dt: float) -> void:
 	if dash_cooldown > 0.0:
 		dash_cooldown -= dt
 	if is_dashing:
+		_reset_fall_tracking()
 		dash_timer -= dt
 		velocity.y = 0.0
 		velocity.x = dash_speed * facing_direction
@@ -268,18 +320,23 @@ func _physics_process(dt: float) -> void:
 			dash_ghost_timer = DASH_GHOST_INTERVAL
 			_spawn_dash_ghost()
 
+		move_and_slide()
 		if dash_timer <= 0.0:
 			is_dashing = false
 			dash_cooldown = 0.45
+			velocity.x = 0.0
 			if dash_particles:
 				dash_particles.emitting = false
-		move_and_slide()
 		return
 
 	if Input.is_action_just_pressed("dash") and dash_cooldown <= 0.0 and not is_dashing and emp_timer <= 0.0 and GameManager.consume_ep(15.0):
+		var dash_input_dir: float = _get_horizontal_input()
+		if dash_input_dir != 0.0:
+			facing_direction = 1 if dash_input_dir > 0.0 else -1
 		is_dashing = true
 		dash_timer = dash_duration
 		dash_ghost_timer = DASH_GHOST_INTERVAL
+		velocity = Vector2(dash_speed * facing_direction, 0.0)
 
 		sprite.texture = tex_dash
 		sprite.hframes = 2
@@ -345,21 +402,28 @@ func _physics_process(dt: float) -> void:
 				wall_dir = -1 if n.x > 0.5 else 1
 				break
 
-	var input_dir: float = Input.get_axis("move_left", "move_right")
+	var input_dir: float = _get_horizontal_input()
 	var pushing_wall: bool = (on_climbable_wall and input_dir != 0.0 and signf(input_dir) == float(wall_dir))
 
-	if on_climbable_wall and pushing_wall and not is_crouching and not is_dashing and not is_grappling:
+	var was_wall_sliding: bool = is_wall_sliding
+	if on_climbable_wall and pushing_wall and not is_crouching and not is_dashing and not is_grappling and GameManager.player_ep > 0.0:
 		wall_direction = wall_dir
 		wall_coyote_timer = 0.12
 		if velocity.y > 0.0:
 			is_wall_sliding = true
+			_reset_fall_tracking()
 			velocity.y = min(velocity.y, wall_slide_speed)
 			can_double_jump = true
 			has_double_jumped = false
+			GameManager.pause_ep_regen(0.6)
+			GameManager.player_ep = max(0.0, GameManager.player_ep - wall_slide_stamina_drain * dt)
+			GameManager.player_energy_changed.emit(GameManager.player_ep, GameManager.player_max_ep)
 		else:
 			is_wall_sliding = false
 	else:
 		is_wall_sliding = false
+	if was_wall_sliding != is_wall_sliding:
+		queue_redraw()
 
 	# 8. Jump, Wall Jump & Double Jump
 	var speed_debuff_mult: float = 1.0
@@ -368,18 +432,20 @@ func _physics_process(dt: float) -> void:
 	if emp_timer > 0.0:
 		speed_debuff_mult *= 0.7
 
-	if Input.is_action_just_pressed("jump"):
+	if jump_just_pressed:
 		if (is_wall_sliding or wall_coyote_timer > 0.0) and not is_on_floor():
-			# Wall Jump (Free, launches diagonally away from wall and up)
-			velocity.x = -wall_direction * wall_jump_h_force
-			velocity.y = wall_jump_v_velocity
-			facing_direction = -wall_direction
-			sprite.scale.x = facing_direction
-			wall_jump_lock_timer = 0.16
-			is_wall_sliding = false
-			wall_coyote_timer = 0.0
-			can_double_jump = true
-			has_double_jumped = false
+			# Wall Jump (consumes stamina to climb walls!)
+			if GameManager.consume_ep(wall_jump_stamina_cost):
+				velocity.x = -wall_direction * wall_jump_h_force
+				velocity.y = wall_jump_v_velocity
+				facing_direction = -wall_direction
+				sprite.scale.x = facing_direction
+				wall_jump_lock_timer = 0.16
+				is_wall_sliding = false
+				wall_coyote_timer = 0.0
+				can_double_jump = true
+				has_double_jumped = false
+				queue_redraw()
 		elif is_on_floor():
 			# Can only jump if not stuck under a low ceiling!
 			if can_stand:
@@ -420,7 +486,25 @@ func _physics_process(dt: float) -> void:
 	# 12. Update Animations
 	_update_animations(dt, input_dir)
 
+	# 13. Fall Distance Tracking & Landing Impact Check
+	var was_on_floor_before_slide: bool = is_on_floor()
+	if not was_on_floor_before_slide:
+		if velocity.y <= 0.0:
+			_reset_fall_tracking()
+		elif not _is_tracking_fall:
+			_is_tracking_fall = true
+			_fall_start_y = global_position.y
+
 	move_and_slide()
+
+	if is_on_floor():
+		if not was_on_floor_before_slide and _is_tracking_fall:
+			var fall_dist: float = global_position.y - _fall_start_y
+			if fall_dist > safe_fall_height:
+				var base_dmg: float = max(5.0, (fall_dist - safe_fall_height) * fall_damage_per_pixel)
+				var final_dmg: float = GameManager.get_scaled_fall_damage(base_dmg)
+				_apply_fall_damage(final_dmg)
+		_reset_fall_tracking()
 
 func _handle_attacks(dt: float) -> void:
 	var weapon_item = GameManager.main_hand
@@ -447,14 +531,17 @@ func _handle_attacks(dt: float) -> void:
 			facing_direction = -1
 		elif mouse_pos.x > global_position.x + 4.0:
 			facing_direction = 1
-		sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 
 		sprite.texture = tex_damaged_shoot if is_dmg else tex_standard_shoot
 		sprite.hframes = 4
 		sprite.frame = (int(Time.get_ticks_msec() / 70) % 4)
-		var y_off = 6 if is_crouching else 0
 		sprite.offset.x = 4 if facing_direction == 1 else -4
-		sprite.offset.y = y_off
+		if is_crouching:
+			sprite.scale = Vector2(facing_direction * sprite_scale_mod.x * 1.06, sprite_scale_mod.y * 0.64)
+			sprite.offset.y = 9.0
+		else:
+			sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
+			sprite.offset.y = 0.0
 
 		flame_tick_timer -= dt
 		if flame_tick_timer <= 0.0:
@@ -465,13 +552,17 @@ func _handle_attacks(dt: float) -> void:
 		if is_firing_flamethrower:
 			is_firing_flamethrower = false
 			GameManager.pause_ep_regen(1.0) # 1 full second cooldown AFTER releasing trigger!
+			sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 			sprite.offset = Vector2(0, 0)
 
 	if attack_timer > 0.0:
 		attack_timer -= dt
 		var progress = clamp(1.0 - (attack_timer / attack_duration), 0.0, 0.99)
 		var f_idx = int(progress * 4.0)
-		var y_off = 6 if is_crouching else 0
+		if is_crouching:
+			sprite.scale = Vector2(facing_direction * sprite_scale_mod.x * 1.06, sprite_scale_mod.y * 0.64)
+		else:
+			sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 
 		if current_attack_type == "melee":
 			if weapon_id == "bat":
@@ -479,22 +570,23 @@ func _handle_attacks(dt: float) -> void:
 				sprite.hframes = 4
 				sprite.frame = f_idx
 				sprite.offset.x = 12 if facing_direction == 1 else -12
-				sprite.offset.y = -2 + y_off
+				sprite.offset.y = 7.0 if is_crouching else -2.0
 			else: # pan
 				sprite.texture = tex_damaged_attack_pan if is_dmg else tex_standard_attack_pan
 				sprite.hframes = 4
 				sprite.frame = f_idx
 				sprite.offset.x = 8 if facing_direction == 1 else -8
-				sprite.offset.y = y_off
+				sprite.offset.y = 9.0 if is_crouching else 0.0
 		elif current_attack_type == "ranged":
 			sprite.texture = tex_damaged_shoot if is_dmg else tex_standard_shoot
 			sprite.hframes = 4
 			sprite.frame = f_idx
 			sprite.offset.x = 4 if facing_direction == 1 else -4
-			sprite.offset.y = y_off
+			sprite.offset.y = 9.0 if is_crouching else 0.0
 
 		if attack_timer <= 0.0:
 			melee_hitbox.monitoring = false
+			sprite.scale = Vector2(facing_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 			sprite.offset = Vector2(0, 0)
 			current_attack_type = ""
 		return
@@ -746,6 +838,32 @@ func _draw() -> void:
 			var txt_pos: Vector2 = Vector2(-18.0, -24.0 - progress * 22.0)
 			draw_string(font, txt_pos, "+35 HP", HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color(0.3, 1.0, 0.58, alpha))
 
+	# 4b. Fall Damage Impact Feedback (-XX FALL & Red Ground Shock Ring)
+	if fall_flash_timer > 0.0:
+		var f_prog: float = 1.0 - clamp(fall_flash_timer / 0.9, 0.0, 1.0)
+		var f_alpha: float = clamp(1.0 - f_prog, 0.0, 1.0)
+		draw_arc(Vector2(0.0, 13.0), 10.0 + f_prog * 22.0, PI, TAU, 20, Color(1.0, 0.35, 0.2, f_alpha * 0.85), 2.0)
+		var f_font: Font = ThemeDB.fallback_font
+		if f_font:
+			var f_txt_pos: Vector2 = Vector2(-24.0, -22.0 - f_prog * 24.0)
+			draw_string(f_font, f_txt_pos, "-%d FALL" % last_fall_damage, HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color(1.0, 0.38, 0.28, f_alpha))
+
+	# 5. Wall-Slide Friction Sparks & Magnetic Grip Glow along the wall edge
+	if is_wall_sliding and wall_direction != 0:
+		var t_ws: float = Time.get_ticks_msec() / 1000.0
+		var wx: float = float(wall_direction) * 9.0
+		# Subtle cyan magnetic grip points at upper hand (-9) and braced boot (+6)
+		draw_circle(Vector2(wx, -9.0), 2.2, Color(0.22, 0.92, 1.0, 0.75))
+		draw_circle(Vector2(wx, 6.0), 2.2, Color(0.22, 0.92, 1.0, 0.75))
+		# Rising friction sparks scraping off the wall
+		for i in range(4):
+			var phase: float = fmod(t_ws * 4.5 + float(i) * 0.27, 1.0)
+			var sy: float = lerpf(8.0, -14.0, phase)
+			var sx: float = wx - float(wall_direction) * (1.0 + sin(phase * PI) * 4.5)
+			var s_alpha: float = clamp(1.0 - phase, 0.0, 1.0)
+			var col: Color = Color(1.0, 0.88, 0.35, s_alpha) if (i % 2 == 0) else Color(1.0, 0.5, 0.12, s_alpha)
+			draw_line(Vector2(sx, sy), Vector2(sx + float(wall_direction) * 1.5, sy + 3.0), col, 1.4)
+
 func _is_collider_climbable(collider: Object) -> bool:
 	if collider == null:
 		return false
@@ -821,7 +939,7 @@ func _try_grapple() -> void:
 	grapple_angular_vel = -v_tan / max(grapple_length, 60.0)
 	queue_redraw()
 
-func _process_grapple_physics(dt: float) -> void:
+func _process_grapple_physics(dt: float, jump_just_pressed: bool = false) -> void:
 	# TRUE CARTESIAN VELOCITY-PROJECTION PENDULUM (Zero Teleportation, Real Gravity & Damping)
 	var rope_vec = global_position - grapple_anchor
 	var dist = max(rope_vec.length(), 1.0)
@@ -839,7 +957,7 @@ func _process_grapple_physics(dt: float) -> void:
 	velocity.y += gravity * dt
 
 	# 3. Player Swing Pumping with [A] / [D] (Left / Right)
-	var swing_input = Input.get_axis("move_left", "move_right")
+	var swing_input = _get_horizontal_input()
 	if swing_input != 0.0 and r_hat.y > -0.15:
 		velocity += t_right * (swing_input * 310.0 * dt)
 		facing_direction = 1 if swing_input > 0.0 else -1
@@ -873,8 +991,8 @@ func _process_grapple_physics(dt: float) -> void:
 	# 7. Redraw visible grappling hook cable
 	queue_redraw()
 
-	# 8. Manual Jump Off with [SPACE] (Catapult Launch)
-	if Input.is_action_just_pressed("jump"):
+	# 8. Manual Jump Off with [SPACE] / [W] (Catapult Launch)
+	if jump_just_pressed:
 		_catapult_release_grapple()
 
 func _catapult_release_grapple() -> void:
@@ -912,11 +1030,12 @@ func _update_animations(dt: float, input_dir: float) -> void:
 			sprite.frame = 0
 			sprite.offset = Vector2.ZERO
 	elif is_wall_sliding:
-		sprite.texture = tex_jump
-		sprite.hframes = 3
-		sprite.frame = 1
+		sprite.texture = tex_damaged_wallslide if is_dmg else tex_standard_wallslide
+		sprite.hframes = 2
+		sprite.frame = int(anim_timer * 7.0) % 2
 		sprite.scale = Vector2(wall_direction * sprite_scale_mod.x, sprite_scale_mod.y)
 		sprite.offset = Vector2(0, 0)
+		queue_redraw()
 	elif not is_on_floor():
 		sprite.texture = tex_jump
 		sprite.hframes = 3
@@ -1039,17 +1158,51 @@ func take_damage(amount: float, knockback_dir: float = 0.0) -> void:
 	if GameManager.player_hp <= 0.0:
 		_die()
 
-func die_in_hazard(hazard_name: String = "acid") -> void:
-	if is_grappling:
-		_release_grapple()
-	is_dashing = false
+func _reset_fall_tracking() -> void:
+	_is_tracking_fall = false
+	_fall_start_y = global_position.y
+
+func _apply_fall_damage(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	last_fall_damage = max(1, int(round(amount)))
+	fall_flash_timer = 0.9
+	add_camera_shake(clamp(amount * 0.25, 3.0, 12.0), 0.22)
+
+	# Heavy landing squash-and-stretch feedback
+	sprite_scale_mod = Vector2(1.32, 0.68)
+	var tw = create_tween()
+	if tw:
+		tw.tween_property(self, "sprite_scale_mod", Vector2(1.0, 1.0), 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+	GameManager.player_hp = max(0.0, GameManager.player_hp - amount)
+	GameManager.player_health_changed.emit(GameManager.player_hp, GameManager.player_max_hp)
+	queue_redraw()
+	if GameManager.player_hp <= 0.0:
+		_die()
+
+func clear_status_effects() -> void:
 	freeze_timer = 0.0
 	chill_timer = 0.0
 	emp_timer = 0.0
 	burn_timer = 0.0
+	burn_tick_timer = 0.0
 	blast_stun_timer = 0.0
+	_reset_fall_tracking()
+	queue_redraw()
+
+func die_in_hazard(hazard_name: String = "acid") -> void:
+	if is_grappling:
+		_release_grapple()
+	is_dashing = false
+	clear_status_effects()
 	if dash_particles:
 		dash_particles.emitting = false
+
+	GameManager.clear_fire_hazards()
+	if GameManager.is_boss_fight_active:
+		GameManager.clear_combat_hazards()
+		GameManager.restore_inventory_checkpoint()
 
 	velocity = Vector2.ZERO
 	GameManager.player_hp = GameManager.player_max_hp

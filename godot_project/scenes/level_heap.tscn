@@ -1,19 +1,19 @@
-[gd_scene load_steps=21 format=3 uid="uid://level_heap_v9_conduit_fixed"]
+[gd_scene format=3 uid="uid://bee0n04ni7ncw"]
 
-[ext_resource type="Texture2D" path="res://assets/level_heap_backdrop_5200x900.png" id="1_backdrop"]
-[ext_resource type="Texture2D" path="res://assets/crushed_car_obstacle.png" id="2_car_tex"]
-[ext_resource type="Texture2D" path="res://assets/scrap_conduit_tunnel_tall.png" id="3_conduit_tall"]
+[ext_resource type="Texture2D" uid="uid://dg2ujlsyj4fho" path="res://assets/level_heap_backdrop_5200x900.png" id="1_backdrop"]
+[ext_resource type="Texture2D" uid="uid://dhpldsysjvtws" path="res://assets/crushed_car_obstacle.png" id="2_car_tex"]
+[ext_resource type="Texture2D" uid="uid://cmtitwhsq44p6" path="res://assets/scrap_conduit_tunnel_tall.png" id="3_conduit_tall"]
 [ext_resource type="PackedScene" path="res://scenes/player.tscn" id="4_player"]
 [ext_resource type="PackedScene" path="res://scenes/enemy_drone.tscn" id="5_drone"]
 [ext_resource type="PackedScene" path="res://scenes/enemy_crawler.tscn" id="6_crawler"]
 [ext_resource type="PackedScene" path="res://scenes/boss_crusher.tscn" id="7_boss"]
 [ext_resource type="PackedScene" path="res://scenes/tutorial_prompt.tscn" id="8_tut"]
-[ext_resource type="Texture2D" path="res://assets/grapple_ring_32x32.png" id="9_ring"]
-[ext_resource type="Script" path="res://scripts/grapple_ring.gd" id="10_g_ring"]
-[ext_resource type="Script" path="res://scripts/hazard_acid_pit.gd" id="11_acid"]
-[ext_resource type="Texture2D" path="res://assets/overhead_girder_beam.png" id="12_girder"]
+[ext_resource type="Texture2D" uid="uid://c82cgt5d35ivb" path="res://assets/grapple_ring_32x32.png" id="9_ring"]
+[ext_resource type="Script" uid="uid://b8qkkrwl74u6u" path="res://scripts/grapple_ring.gd" id="10_g_ring"]
+[ext_resource type="Script" uid="uid://cbilqcp2bh7db" path="res://scripts/hazard_acid_pit.gd" id="11_acid"]
+[ext_resource type="Texture2D" uid="uid://cwjc68gre33jn" path="res://assets/overhead_girder_beam.png" id="12_girder"]
 [ext_resource type="PackedScene" path="res://scenes/scrap_barricade.tscn" id="13_barricade"]
-[ext_resource type="Script" path="res://scripts/climbable_wall.gd" id="14_climbwall"]
+[ext_resource type="Script" uid="uid://yihrkq7xlng4" path="res://scripts/climbable_wall.gd" id="14_climbwall"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor1"]
 size = Vector2(2800, 40)
@@ -21,205 +21,206 @@ size = Vector2(2800, 40)
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_floor2"]
 size = Vector2(1600, 40)
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_conduit_roof"]
-size = Vector2(280, 360)
-
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_car"]
 size = Vector2(56, 24)
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_acid"]
-size = Vector2(740, 140)
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_conduit_roof"]
+size = Vector2(280, 360)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_girder"]
 size = Vector2(36, 550)
 
-[node name="LevelHeap" type="Node2D"]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_acid"]
+size = Vector2(849, 136)
 
-[node name="StaticBackdrop" type="Sprite2D" parent="."]
+[node name="LevelHeap" type="Node2D" unique_id=1615298244]
+
+[node name="StaticBackdrop" type="Sprite2D" parent="." unique_id=764848357]
 z_index = -10
 position = Vector2(2600, 450)
 texture = ExtResource("1_backdrop")
 
-[node name="StaticGeometry" type="StaticBody2D" parent="."]
+[node name="StaticGeometry" type="StaticBody2D" parent="." unique_id=161803281]
 collision_mask = 0
 script = ExtResource("14_climbwall")
-climbable = false
 metadata/climbable = false
 
-[node name="Floor1" type="CollisionShape2D" parent="StaticGeometry"]
+[node name="Floor1" type="CollisionShape2D" parent="StaticGeometry" unique_id=1966239229]
 position = Vector2(1400, 800)
 shape = SubResource("RectangleShape2D_floor1")
 
-[node name="Floor2" type="CollisionShape2D" parent="StaticGeometry"]
+[node name="Floor2" type="CollisionShape2D" parent="StaticGeometry" unique_id=1444426389]
 position = Vector2(4400, 800)
 shape = SubResource("RectangleShape2D_floor2")
 
-[node name="CrushedCarObstacle" type="StaticBody2D" parent="."]
+[node name="CrushedCarObstacle" type="StaticBody2D" parent="." unique_id=1480754931]
 position = Vector2(320, 768)
-collision_layer = 1
 collision_mask = 0
 script = ExtResource("14_climbwall")
-climbable = false
 metadata/climbable = false
 
-[node name="Sprite2D" type="Sprite2D" parent="CrushedCarObstacle"]
+[node name="Sprite2D" type="Sprite2D" parent="CrushedCarObstacle" unique_id=881675689]
 texture = ExtResource("2_car_tex")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="CrushedCarObstacle"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CrushedCarObstacle" unique_id=1534521394]
 shape = SubResource("RectangleShape2D_car")
 
-[node name="ScrapConduitTunnel" type="StaticBody2D" parent="."]
+[node name="ScrapConduitTunnel" type="StaticBody2D" parent="." unique_id=602861045]
 position = Vector2(860, 760)
-collision_layer = 1
 collision_mask = 0
 script = ExtResource("14_climbwall")
-climbable = false
 metadata/climbable = false
 
-[node name="Sprite2D" type="Sprite2D" parent="ScrapConduitTunnel"]
+[node name="Sprite2D" type="Sprite2D" parent="ScrapConduitTunnel" unique_id=718890168]
 position = Vector2(0, -180)
 texture = ExtResource("3_conduit_tall")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="ScrapConduitTunnel"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ScrapConduitTunnel" unique_id=1717143376]
 position = Vector2(0, -180)
 shape = SubResource("RectangleShape2D_conduit_roof")
 
-[node name="OverheadGirderBeam" type="StaticBody2D" parent="."]
+[node name="OverheadGirderBeam" type="StaticBody2D" parent="." unique_id=269352289]
 position = Vector2(1380, 440)
-collision_layer = 1
 collision_mask = 0
 script = ExtResource("14_climbwall")
 climbable = true
 metadata/climbable = true
 
-[node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam"]
+[node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam" unique_id=1780788538]
 texture = ExtResource("12_girder")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam" unique_id=71039280]
 shape = SubResource("RectangleShape2D_girder")
 
-[node name="OverheadGirderBeam2" type="StaticBody2D" parent="."]
+[node name="OverheadGirderBeam2" type="StaticBody2D" parent="." unique_id=1908964809]
 position = Vector2(1460, 440)
-collision_layer = 1
 collision_mask = 0
 script = ExtResource("14_climbwall")
 climbable = true
 metadata/climbable = true
 
-[node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam2"]
+[node name="Sprite2D" type="Sprite2D" parent="OverheadGirderBeam2" unique_id=1263253494]
 texture = ExtResource("12_girder")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam2"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="OverheadGirderBeam2" unique_id=1626374134]
 shape = SubResource("RectangleShape2D_girder")
 
-[node name="ScrapBarricade" parent="." instance=ExtResource("13_barricade")]
+[node name="ScrapBarricade" parent="." unique_id=103894107 instance=ExtResource("13_barricade")]
 position = Vector2(1380, 748)
 
-[node name="GrappleRing1" type="Node2D" parent="." groups=["grapple_rings"]]
+[node name="GrappleRing1" type="Node2D" parent="." unique_id=1118795475 groups=["grapple_rings"]]
 position = Vector2(3000, 560)
 script = ExtResource("10_g_ring")
 
-[node name="Sprite2D" type="Sprite2D" parent="GrappleRing1"]
+[node name="Sprite2D" type="Sprite2D" parent="GrappleRing1" unique_id=1829984027]
 texture = ExtResource("9_ring")
 
-[node name="GrappleRing2" type="Node2D" parent="." groups=["grapple_rings"]]
+[node name="GrappleRing2" type="Node2D" parent="." unique_id=2056853678 groups=["grapple_rings"]]
 position = Vector2(3200, 540)
 script = ExtResource("10_g_ring")
 
-[node name="Sprite2D" type="Sprite2D" parent="GrappleRing2"]
+[node name="Sprite2D" type="Sprite2D" parent="GrappleRing2" unique_id=568934592]
 texture = ExtResource("9_ring")
 
-[node name="GrappleRing3" type="Node2D" parent="." groups=["grapple_rings"]]
+[node name="GrappleRing3" type="Node2D" parent="." unique_id=1528979453 groups=["grapple_rings"]]
 position = Vector2(3400, 560)
 script = ExtResource("10_g_ring")
 
-[node name="Sprite2D" type="Sprite2D" parent="GrappleRing3"]
+[node name="Sprite2D" type="Sprite2D" parent="GrappleRing3" unique_id=2028435594]
 texture = ExtResource("9_ring")
 
-[node name="HazardAcidPit" type="Area2D" parent="."]
+[node name="HazardAcidPit" type="Area2D" parent="." unique_id=1006555003]
 position = Vector2(3200, 890)
 collision_layer = 8
 collision_mask = 2
 script = ExtResource("11_acid")
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="HazardAcidPit"]
+[node name="CollisionShape2D" type="CollisionShape2D" parent="HazardAcidPit" unique_id=552865502]
+position = Vector2(16.5, -2)
 shape = SubResource("RectangleShape2D_acid")
 
-[node name="AcidSurfaceVisual" type="ColorRect" parent="HazardAcidPit"]
-offset_left = -370.0
-offset_top = -60.0
-offset_right = 370.0
+[node name="AcidSurfaceVisual" type="ColorRect" parent="HazardAcidPit" unique_id=1298289111]
+offset_left = -400.0
+offset_top = -70.0
+offset_right = 425.0
 offset_bottom = 60.0
 color = Color(0.12, 0.95, 0.35, 0.35)
 
-[node name="Player" parent="." instance=ExtResource("4_player")]
-position = Vector2(80, 750)
+[node name="Player" parent="." unique_id=907732652 instance=ExtResource("4_player")]
+position = Vector2(100, 756)
 
-[node name="TutorialMove" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialMove" parent="." unique_id=604839864 instance=ExtResource("8_tut")]
 position = Vector2(100, 715)
 tutorial_title = "A / D"
-tutorial_desc = "MOVE CHASSIS\nHold [SHIFT] to Sprint"
-detection_radius = 140.0
+tutorial_desc = "MOVE CHASSIS
+Hold [SHIFT] to Sprint"
 
-[node name="TutorialJumpCar" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialJumpCar" parent="." unique_id=2144286540 instance=ExtResource("8_tut")]
 position = Vector2(310, 715)
 tutorial_title = "[SPACE] TO JUMP"
 tutorial_desc = "Leap over crushed car obstacle"
 detection_radius = 160.0
 
-[node name="TutorialCrouch" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialCrouch" parent="." unique_id=674023886 instance=ExtResource("8_tut")]
 position = Vector2(720, 715)
 tutorial_title = "[S] / [DOWN] CROUCH"
-tutorial_desc = "Crawl through low scrap conduit\n(Clearance 20px - crouch to pass!)"
+tutorial_desc = "Crawl through low scrap conduit
+(Clearance 20px - crouch to pass!)"
 detection_radius = 160.0
 
-[node name="TutorialMelee" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialMelee" parent="." unique_id=1623021182 instance=ExtResource("8_tut")]
 position = Vector2(1300, 715)
 tutorial_title = "[X] / [LEFT CLICK]"
-tutorial_desc = "Swing Cyber Frying Pan\nto shatter scrap barricade"
+tutorial_desc = "Swing Cyber Frying Pan
+to shatter scrap barricade"
 detection_radius = 160.0
 
-[node name="TutorialWallJump" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialWallJump" parent="." unique_id=1499591987 instance=ExtResource("8_tut")]
 position = Vector2(1420, 715)
 tutorial_title = "WALL SLIDE & JUMP"
-tutorial_desc = "Hold [A] / [D] on hazard-striped walls\nPress [SPACE] to Wall Jump!"
+tutorial_desc = "Hold [A] / [D] on hazard-striped walls
+Press [SPACE] to Wall Jump!"
 detection_radius = 160.0
 
-[node name="TutorialSafeCombat" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialSafeCombat" parent="." unique_id=1704246806 instance=ExtResource("8_tut")]
 position = Vector2(1700, 715)
 tutorial_title = "SAFE COMBAT ARENA"
-tutorial_desc = "Defeat isolated Scrap Crawler\nand Junk Drone to advance"
+tutorial_desc = "Defeat isolated Scrap Crawler
+and Junk Drone to advance"
 detection_radius = 180.0
 
-[node name="TutorialShield" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialShield" parent="." unique_id=1054670501 instance=ExtResource("8_tut")]
 position = Vector2(2450, 715)
 tutorial_title = "HOLD [F] / [RIGHT CLICK]"
-tutorial_desc = "Deploy Energy Shield\n(Regens 15%/s after 3s non-use)"
+tutorial_desc = "Deploy Energy Shield
+(Regens 15%/s after 3s non-use)"
 detection_radius = 180.0
 
-[node name="TutorialGrapple" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialGrapple" parent="." unique_id=706074292 instance=ExtResource("8_tut")]
 position = Vector2(2750, 715)
 tutorial_title = "[E] GRAPPLING HOOK"
-tutorial_desc = "Latch onto overhead rings\nSwing across colossal death chasm!"
+tutorial_desc = "Latch onto overhead rings
+Swing across colossal death chasm!"
 detection_radius = 200.0
 
-[node name="TutorialGrenade" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialGrenade" parent="." unique_id=185171987 instance=ExtResource("8_tut")]
 position = Vector2(3750, 715)
 tutorial_title = "[G] FRAG GRENADE"
 tutorial_desc = "Blast open reinforced steel bulkhead"
 detection_radius = 180.0
 
-[node name="TutorialPreBoss" parent="." instance=ExtResource("8_tut")]
+[node name="TutorialPreBoss" parent="." unique_id=886079967 instance=ExtResource("8_tut")]
 position = Vector2(3980, 715)
 tutorial_title = "[I] INVENTORY & [Q] SWAP"
-tutorial_desc = "Drag & Drop Arsenal Matrix\nPrepare for The Crusher Titan!"
+tutorial_desc = "Drag & Drop Arsenal Matrix
+Prepare for The Crusher Titan!"
 detection_radius = 180.0
 
-[node name="EnemyCrawler1" parent="." instance=ExtResource("6_crawler")]
+[node name="EnemyCrawler1" parent="." unique_id=1389272193 instance=ExtResource("6_crawler")]
 position = Vector2(1900, 768)
 
-[node name="EnemyDrone1" parent="." instance=ExtResource("5_drone")]
+[node name="EnemyDrone1" parent="." unique_id=554051962 instance=ExtResource("5_drone")]
 position = Vector2(2100, 580)
 
-[node name="BossCrusher" parent="." instance=ExtResource("7_boss")]
+[node name="BossCrusher" parent="." unique_id=1037097175 instance=ExtResource("7_boss")]
 position = Vector2(4600, 740)

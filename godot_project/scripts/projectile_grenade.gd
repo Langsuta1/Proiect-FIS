@@ -20,6 +20,7 @@ var tex_cryo = preload("res://assets/grenade_cryo_32x32.png")
 var tex_fire = preload("res://assets/grenade_fire_32x32.png")
 
 func _ready() -> void:
+	add_to_group("active_grenades")
 	fuse_timer = fuse_time
 	_apply_texture()
 

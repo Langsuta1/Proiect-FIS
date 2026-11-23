@@ -7,6 +7,7 @@ var elapsed: float = 0.0
 var duration: float = 0.65
 
 # Lingering fire hazard state (for "fire" thermite grenade)
+var is_harmless: bool = false
 var is_lingering_fire: bool = false
 var fire_pool_duration: float = 3.2
 var fire_damage_tick: float = 0.0
@@ -16,15 +17,23 @@ var particles: Array = []
 var lightning_bolts: Array = []
 var ice_spikes: Array = []
 
-func init(type: String, pos: Vector2) -> void:
+func init(type: String, pos: Vector2, harmless: bool = false) -> void:
 	grenade_type = type
 	global_position = pos
+	is_harmless = harmless
 	z_index = 25
 	_generate_fx_elements()
+	add_to_group("explosion_fx")
+	if is_lingering_fire:
+		add_to_group("fire_hazards")
 
 func _ready() -> void:
 	if clouds.is_empty():
 		_generate_fx_elements()
+	if not is_in_group("explosion_fx"):
+		add_to_group("explosion_fx")
+	if is_lingering_fire and not is_in_group("fire_hazards"):
+		add_to_group("fire_hazards")
 	_trigger_camera_shake()
 
 func _trigger_camera_shake() -> void:
@@ -84,7 +93,7 @@ func _generate_fx_elements() -> void:
 				"width": randf_range(5.0, 9.0)
 			})
 	elif grenade_type == "fire":
-		is_lingering_fire = true
+		is_lingering_fire = not is_harmless
 
 func _regenerate_lightning() -> void:
 	lightning_bolts.clear()
@@ -134,6 +143,8 @@ func _process(dt: float) -> void:
 		queue_free()
 
 func _apply_lingering_fire_pool() -> void:
+	if is_harmless:
+		return
 	var pool_radius = 58.0
 	for group_name in ["player", "enemies", "boss"]:
 		for node in get_tree().get_nodes_in_group(group_name):

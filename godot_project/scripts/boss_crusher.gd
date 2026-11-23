@@ -83,11 +83,25 @@ func _ready() -> void:
 		hurtbox.add_to_group("enemies")
 		hurtbox.add_to_group("boss")
 
+	# If loaded from a save where the boss was already defeated, keep arena clear
+	if GameManager.is_boss_defeated:
+		current_state = State.DEFEATED
+		visible = false
+		set_physics_process(false)
+		if collision_shape:
+			collision_shape.set_deferred("disabled", true)
+		if hurtbox:
+			hurtbox.set_deferred("monitoring", false)
+			hurtbox.set_deferred("monitorable", false)
+		return
+
 	# Start perched high in the ceiling shadows waiting for the player to enter the arena!
 	_enter_dormant_ambush()
 
 func _enter_dormant_ambush() -> void:
 	current_state = State.DORMANT
+	GameManager.is_boss_fight_active = false
+	GameManager.clear_combat_hazards()
 	max_hp = base_max_hp * GameManager.difficulty_multiplier
 	hp = max_hp
 	phase = 1
@@ -109,6 +123,8 @@ func activate_boss(player: Node2D) -> void:
 	if current_state != State.DORMANT:
 		return
 	player_ref = player
+	GameManager.is_boss_fight_active = true
+	GameManager.save_inventory_checkpoint(true)
 	current_state = State.INTRO
 	intro_stage = 0
 	state_duration = 2.6
@@ -136,6 +152,7 @@ func _physics_process(dt: float) -> void:
 				if "respawn_position" in player_ref:
 					player_ref.respawn_position = BOSS_CHECKPOINT
 				activate_boss(player_ref)
+				GameManager.save_game(GameManager.current_save_slot, "Arena Crusher Titan")
 		queue_redraw()
 		return
 
@@ -609,6 +626,9 @@ func take_damage(amount: float, _knockback: float = 0.0) -> void:
 
 func _start_defeated_sequence() -> void:
 	current_state = State.DEFEATED
+	GameManager.is_boss_fight_active = false
+	GameManager.clear_inventory_checkpoint()
+	GameManager.clear_combat_hazards()
 	state_duration = 2.2
 	state_timer = state_duration
 	death_explosion_timer = 0.0
@@ -620,8 +640,13 @@ func _start_defeated_sequence() -> void:
 		compactor_piston.visible = false
 	if sprite:
 		sprite.frame = 3
-	if player_ref and player_ref.has_method("add_camera_shake"):
-		player_ref.add_camera_shake(14.0, 1.8)
+	if player_ref:
+		if player_ref.has_method("clear_status_effects"):
+			player_ref.clear_status_effects()
+		if "i_frame_timer" in player_ref:
+			player_ref.i_frame_timer = max(player_ref.i_frame_timer, 2.5)
+		if player_ref.has_method("add_camera_shake"):
+			player_ref.add_camera_shake(14.0, 1.8)
 
 func _process_defeated_sequence(dt: float) -> void:
 	state_timer -= dt
@@ -633,12 +658,14 @@ func _process_defeated_sequence(dt: float) -> void:
 	if death_explosion_timer <= 0.0:
 		death_explosion_timer = 0.26
 		var rand_off = Vector2(randf_range(-42.0, 42.0), randf_range(-48.0, 40.0))
-		_spawn_explosion_fx("frag" if randf() > 0.4 else "emp", global_position + rand_off)
+		_spawn_explosion_fx("frag" if randf() > 0.4 else "emp", global_position + rand_off, true)
 
 	queue_redraw()
 
 	if state_timer <= 0.0:
-		_spawn_explosion_fx("fire", global_position)
+		GameManager.is_boss_defeated = true
+		GameManager.clear_combat_hazards()
+		_spawn_explosion_fx("fire", global_position, true)
 		GameManager.spawn_mob_loot(global_position, 1.0, 3)
 		visible = false
 		set_physics_process(false)
@@ -647,15 +674,16 @@ func _process_defeated_sequence(dt: float) -> void:
 		if hurtbox:
 			hurtbox.set_deferred("monitoring", false)
 			hurtbox.set_deferred("monitorable", false)
+		GameManager.save_game(GameManager.current_save_slot, "Crusher Titan Învins")
 		GameManager.boss_defeated.emit()
 		print("THE CRUSHER TITAN DEFEATED!")
 
-func _spawn_explosion_fx(type: String, world_pos: Vector2) -> void:
+func _spawn_explosion_fx(type: String, world_pos: Vector2, harmless: bool = false) -> void:
 	var parent_node = get_parent()
 	if parent_node:
 		var fx = ExplosionFXClass.new()
 		parent_node.add_child(fx)
-		fx.init(type, world_pos)
+		fx.init(type, world_pos, harmless)
 
 # -------------------------------------------------------------------------
 # CUSTOM WORLD-SPACE VECTORS & TELEGRAPH RENDERING
